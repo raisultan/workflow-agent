@@ -57,6 +57,11 @@ limits:
   namespaces (Ubuntu 23.10 and later) must allow them; see [getting started](docs/getting-started.md) and [SECURITY](SECURITY.md).
 - A merge counts only with a green pipeline; an approver can close a job with `close` otherwise.
 
+Possible next steps, none of them promised: Jira Cloud (its newer search API), GitHub and Slack connectors, a Kubernetes deployment
+and Helm chart, prompts tested on more models, OpenTelemetry export, an optional read-only GitHub token so toolchain installs do not
+hit GitHub's unauthenticated rate limit on busy hosts, and English prompts that ask about a vague ticket as reliably as the Russian
+ones (in the release eval, one vague-ticket scenario passed 1 of 4 English runs against 2 of 2 Russian).
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md): the demo, connecting your tools, a first job.
