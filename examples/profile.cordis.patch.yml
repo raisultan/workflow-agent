@@ -1,0 +1,53 @@
+# Example profile configuration. Copy it to config/profile.cordis.patch.yml and edit it there: Compose mounts config/ into the
+# container, and the entry point lays your copy over the image's profile on every start (scripts/entrypoint.sh).
+# Settings are deployment configuration (D9): change them here and redeploy. Hosts and secrets come from the environment (.env).
+# As shipped, one repository is read from .env (REPOSITORY_*, JIRA_PROJECT, MATTERMOST_CHANNEL_ID, APPROVER_EMAILS), so a first
+# deployment needs no edit here. See docs/getting-started.md, and docs/DEPLOYMENT.md for every key.
+- id: workflow-agent
+  config:
+    stateDir: !!js "process.env.WORKBENCH_STATE_DIR || '/var/lib/workbench/state'"
+    # The language the workbench writes in: ru or en.
+    locale: en
+    # The Compose demo: one scripted synthetic job, end to end, with no connector or model.
+    demo: !!js "process.env.WORKBENCH_DEMO === 'true'"
+    # Models as provider/model; the default is LITELLM_MODEL on the litellm route. Stages may name their own in a workflow.
+    models:
+      default: !!js "`litellm/${process.env.LITELLM_MODEL || 'deepseek-v4-pro'}`"
+    executor:
+      maxWorkers: 2
+    # WORKBENCH_ALLOWED_SENDERS adds senders to every source. Approvers are per workflow and source; '*' is every allowed
+    # sender of that source, and the requester may always approve their own job. Mattermost entries may be usernames.
+    policy:
+      approvers:
+        standard-delivery:
+          jira: ['*']
+          mattermost: ['*']
+          gitlab: ['*']
+    # The repositories jobs work in (D10). A job's repository is chosen from its trigger: repo:<name> in the message, then the Jira
+    # project, then the Mattermost channel id, then the default. ci: none leaves the CI check out for a repository without CI.
+    # Add a profile per repository; one is enough to start.
+    repositories:
+      - name: !!js "process.env.REPOSITORY_NAME || 'app'"
+        project: !!js "process.env.GITLAB_PROJECT || 'acme/app'"
+        targetBranch: !!js "process.env.REPOSITORY_TARGET_BRANCH || 'main'"
+        testCommand: !!js "process.env.REPOSITORY_TEST_COMMAND || 'npm test'"
+        # npm, pypi or go: the package registries the job's commands may reach.
+        registries: !!js "(process.env.REPOSITORY_REGISTRIES || 'npm').split(',').map(name => name.trim()).filter(Boolean)"
+        match:
+          # The Jira project whose issues are this repository's, and the Mattermost channel (its id) where its jobs ask questions.
+          jira: !!js "[process.env.JIRA_PROJECT || 'APP']"
+          mattermost: !!js "process.env.MATTERMOST_CHANNEL_ID ? [process.env.MATTERMOST_CHANNEL_ID] : []"
+        # The only people who approve this repository's plans, by email; empty: the policy's approvers above.
+        approvers: !!js "(process.env.APPROVER_EMAILS || '').split(',').map(email => email.trim()).filter(Boolean)"
+        default: true
+    workflows:
+      standardDelivery:
+        jiraStatuses:
+          inProgress: In Progress
+          inReview: In Review
+- id: workflow-agent-jira
+  disabled: false
+- id: workflow-agent-mattermost
+  disabled: false
+- id: workflow-agent-gitlab
+  disabled: false

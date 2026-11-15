@@ -1,0 +1,102 @@
+# The image, built natively for each architecture, with the sandbox's isolation smoke run in full mode on each; on a version tag
+# (v*), both are pushed by digest to GHCR and joined into one multi-arch tag. arm64 runners are free only for public
+# repositories, so the arm64 job runs once the repository is public.
+name: image
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: [Dockerfile, docker-compose.yml, scripts/**, src/sandbox/**, cordis.patch.yml, package.json, pnpm-lock.yaml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Named after the repository: the public one publishes ghcr.io/raisultan/workflow-agent, a staging copy its own name.
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Skip arm64 while the repository is private
+        id: skip
+        run: echo "skip=${{ matrix.arch == 'arm64' && github.event.repository.private }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
+
+      # Ubuntu 24.04 restricts unprivileged user namespaces; the sandbox needs them (docs/DEPLOYMENT.md, Linux hosts).
+      - name: Allow unprivileged user namespaces
+        if: steps.skip.outputs.skip != 'true'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Build
+        if: steps.skip.outputs.skip != 'true'
+        run: docker build --build-arg VERSION="${GITHUB_REF_NAME#v}" -t workflow-agent:ci .
+
+      - name: Start full mode and run the isolation smoke
+        if: steps.skip.outputs.skip != 'true'
+        env:
+          WORKFLOW_AGENT_IMAGE: workflow-agent:ci
+        run: |
+          docker compose --profile full up -d --no-build
+          for i in $(seq 1 60); do
+            if docker compose --profile full logs workbench-full 2>&1 | grep -q 'ready'; then break; fi
+            sleep 5
+          done
+          docker compose --profile full exec -T workbench-full node scripts/smoke-worker-isolation.ts
+
+      - name: Logs on failure
+        if: failure() && steps.skip.outputs.skip != 'true'
+        env:
+          WORKFLOW_AGENT_IMAGE: workflow-agent:ci
+        run: docker compose --profile full logs --tail 200 workbench-full
+
+      - name: Push by digest
+        if: startsWith(github.ref, 'refs/tags/v') && steps.skip.outputs.skip != 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag workflow-agent:ci "$IMAGE:ci-${{ matrix.arch }}-${GITHUB_SHA}"
+          docker push "$IMAGE:ci-${{ matrix.arch }}-${GITHUB_SHA}"
+          docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:ci-${{ matrix.arch }}-${GITHUB_SHA}" > digest-${{ matrix.arch }}.txt
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') && steps.skip.outputs.skip != 'true'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digest-${{ matrix.arch }}.txt
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+      - name: Join the architectures under the version's tag and latest
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          version="${GITHUB_REF_NAME#v}"
+          digests=$(cat digest-*.txt)
+          tags="-t $IMAGE:$version"
+          case "$version" in *-*) ;; *) tags="$tags -t $IMAGE:latest" ;; esac
+          docker buildx imagetools create $tags $digests
+          docker buildx imagetools inspect "$IMAGE:$version"

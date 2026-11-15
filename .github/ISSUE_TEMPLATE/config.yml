@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/raisultan/workflow-agent/security/advisories/new
+    about: Report vulnerabilities privately, not in an issue (SECURITY.md).

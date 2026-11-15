@@ -1,0 +1,346 @@
+# workflow-agent bundle layer: inserts the plugins without configuration, and the agent presets its Sessions run under. The
+# profile supplies the `workflow-agent` entry's stateDir (see docs/DEPLOYMENT.md and examples/profile.cordis.patch.yml); the plugin
+# refuses to start without stateDir.
+# Read-before-write: `write` and `edit` refuse a file the Session has not read, or one that changed since it was read. DSH 0.2.2
+# ships this base row disabled; Workflow Agent keeps it on so implement and review never overwrite code they have not seen.
+- id: fs-observation-policy
+  disabled: false
+# Every Session's default model goes through the LiteLLM gateway (PRD §3 rule 3), on the same model the `litellm` route lists.
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: litellm
+    model: !!js process.env.LITELLM_MODEL || 'deepseek-v4-pro'
+- id: llm-pi-ai
+  config:
+    providers:
+      litellm:
+        displayName: LiteLLM Gateway
+        apiKeyEnv: LITELLM_API_KEY
+        api: openai-completions
+        baseURL: !!js process.env.LITELLM_BASE_URL || 'http://127.0.0.1:4000/v1'
+        compat:
+          thinkingFormat: deepseek
+        models:
+          - id: !!js process.env.LITELLM_MODEL || 'deepseek-v4-pro'
+            name: !!js process.env.LITELLM_MODEL || 'deepseek-v4-pro'
+            contextWindow: 1000000
+            maxTokens: 65536
+            reasoningEfforts:
+              off:
+              high: high
+# The sandbox wrapper (T10.3, src/sandbox/): in the Linux container every confined command (agent shells, their background jobs and
+# the host's checks) runs through it. It masks $DSH_HOME, the state directory and every job's worktree but the job's own, cleans the
+# environment, and refuses a command it cannot place in a job. WORKBENCH_SANDBOX_WRAPPER is set in the image; without it (macOS
+# development) DSH's own Seatbelt profile applies, and the workbench refuses to start on Linux outside the demo.
+- id: sandbox
+  config:
+    runnerCommand: !!js "process.env.WORKBENCH_SANDBOX_WRAPPER ? [process.execPath, process.env.WORKBENCH_SANDBOX_WRAPPER] : []"
+    runnerFailureSignatures: !!js "process.env.WORKBENCH_SANDBOX_WRAPPER ? ['workbench-sandbox: ', 'bwrap: '] : []"
+# Permissions of the Sessions this bundle creates. Patches replace an entry's whole `config`, so the base presets are restated.
+# Stage Sessions run under DSH's file sandbox (`dsh-sandbox-local`: Seatbelt on macOS, bwrap or Landlock on Linux):
+# `inspector` and `planner` run under `workflow-agent-readonly` (`read-only`), while `implementer` and `reviewer` run under
+# `workflow-agent-worker` (`workspace-write`, confined to the job worktree). Approval is `never` because no person answers a
+# Session's approval requests: a denied write fails closed instead of waiting. `danger-full-access` is deliberately absent.
+# Workflow definitions name these presets per stage (src/workflows/standard-delivery.ts); a job's manifest freezes them.
+- id: permission
+  name: '@deepseek-ai/dsh-permission-presets'
+  config:
+    presets:
+      read-only:
+        sandbox: read-only
+        approval: ask
+      workspace-write:
+        sandbox: workspace-write
+        approval: ask
+      workflow-agent-readonly:
+        name: Workflow Agent read-only
+        description: Только чтение рабочей копии; запросы подтверждения отклоняются.
+        sandbox: read-only
+        approval: never
+      workflow-agent-worker:
+        name: Workflow Agent worker
+        description: Запись только в рабочую копию задачи; запросы подтверждения отклоняются.
+        sandbox: workspace-write
+        approval: never
+- insert:
+    - id: workflow-agent
+      name: workflow-agent
+    # Jira Source (Issue/Sub-task intake, linked issues, epics, attachments, comments, transitions).
+    - id: workflow-agent-jira
+      name: workflow-agent/jira-watch
+      disabled: true
+    # Mattermost Source (Channels, threads, mentions, dynamic public/private channels).
+    - id: workflow-agent-mattermost
+      name: workflow-agent/mattermost-watch
+      disabled: true
+    # GitLab Source (Merge Requests, branches, pipelines, approvals).
+    - id: workflow-agent-gitlab
+      name: workflow-agent/gitlab-watch
+      disabled: true
+    # Stage 1 (`inspect`): read-only workspace inspection; links the Jira ticket, moves it in progress and records the confirmed scope
+    # as a comment. Its questions go out in the stage report: the host posts them in the job's Mattermost thread (D12).
+    - id: workflow-agent-inspector-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: workflow-agent-inspector
+        name: Workflow Agent inspector
+        description: 'Пресет этапа анализа (inspect): чтение репозитория, привязка задачи Jira и фиксация требований в ней; вопросы людям публикует хост.'
+        order: 90
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+    # Stage 2 (`plan`): read-only workspace inspection, with no write tools. The stage reports the plan; the host posts it and its
+    # approval request in the Jira ticket (D12).
+    - id: workflow-agent-planner-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: workflow-agent-planner
+        name: Workflow Agent planner
+        description: 'Пресет этапа проектирования (plan): чтение репозитория и составление плана; план в Jira публикует хост.'
+        order: 91
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              write: false
+              edit: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+    # Stage 3 (`implement`): workspace-write code changes, 5s backgrounded shell/jobs, GitLab branch push + MR creation/update, and Jira status/comment.
+    # No web tools and no subagents (T10.2): web_search and web_fetch run on the host, outside the egress proxy (D8 decision 10), and a
+    # subagent would run under DSH's own `standard` preset, outside the stage's tools, sandbox and budget (T10.0).
+    - id: workflow-agent-implementer-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: workflow-agent-implementer
+        name: Workflow Agent implementer
+        description: 'Пресет этапа реализации (implement): запись в рабочую копию, тесты, создание/обновление MR в GitLab и статус в Jira.'
+        order: 92
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          # A foreground command waits at most 5 s, then the shell tool moves it to a background job.
+          - id: shell
+            name: cordis:group
+            group: true
+            isolate:
+              shell: true
+            config:
+              - id: bash-sandbox
+                name: '@deepseek-ai/dsh-bash-sandbox'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: pwsh-sandbox
+                name: '@deepseek-ai/dsh-pwsh-sandbox'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: tool-bash
+                name: '@deepseek-ai/dsh-tool-bash'
+                disabled: !!js process.platform === 'win32'
+              - id: tool-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh'
+                disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          # A wait for a job ends after 5 s too; the job's end wakes the worker with its result.
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+            config:
+              waitTimeoutMs: 5000
+              maxWaitTimeoutMs: 5000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+    # Stage 4 (`review`): workspace-write review fixes, 5s backgrounded shell/jobs (no web tools, no subagents), GitLab branch push + MR discussion replies; Jira and Mattermost are strictly read-only.
+    - id: workflow-agent-reviewer-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: workflow-agent-reviewer
+        name: Workflow Agent reviewer
+        description: 'Пресет этапа код-ревью (review): правки по замечаниям, тесты, пуш в ветку MR и ответы в тредах GitLab.'
+        order: 93
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: shell
+            name: cordis:group
+            group: true
+            isolate:
+              shell: true
+            config:
+              - id: bash-sandbox
+                name: '@deepseek-ai/dsh-bash-sandbox'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: pwsh-sandbox
+                name: '@deepseek-ai/dsh-pwsh-sandbox'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 5000
+                  maxTimeoutMs: 5000
+              - id: tool-bash
+                name: '@deepseek-ai/dsh-tool-bash'
+                disabled: !!js process.platform === 'win32'
+              - id: tool-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh'
+                disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+            config:
+              waitTimeoutMs: 5000
+              maxWaitTimeoutMs: 5000
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true

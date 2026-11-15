@@ -1,0 +1,11 @@
+# Runs the workbench's full service against the eval's local services (T11.7). Use with the main Compose file:
+#   set -a; . eval/.state/workbench.env; set +a; export LITELLM_MODEL=deepseek-flash DEEPSEEK_API_KEY=… LITELLM_BASE_URL=…
+#   docker compose -p workbench-eval-run -f docker-compose.yml -f eval/workbench.compose.yml --profile full up -d
+services:
+  workbench-full:
+    environment:
+      EVAL_CHANNEL_NODE: ${EVAL_CHANNEL_NODE:?run node eval/bootstrap.ts --provision}
+      EVAL_CHANNEL_PYTHON: ${EVAL_CHANNEL_PYTHON:?run node eval/bootstrap.ts --provision}
+      WORKBENCH_PROFILE: /etc/workflow-agent-eval/profile.cordis.patch.yml
+    volumes:
+      - ./eval/profile.cordis.patch.yml:/etc/workflow-agent-eval/profile.cordis.patch.yml:ro

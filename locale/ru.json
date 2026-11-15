@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workflow Agent",
+    "description": "Многоэтапная платформа выполнения инженерных задач с интеграцией Jira, Mattermost и GitLab на базе DeepSeek Harness (DSH)."
+  }
+}

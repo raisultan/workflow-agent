@@ -1,0 +1,154 @@
+name: workflow-agent
+
+services:
+  workbench:
+    build: .
+    image: ${WORKFLOW_AGENT_IMAGE:-ghcr.io/raisultan/workflow-agent:0.1.0}
+    working_dir: /workspace
+    # dsh runs directly (not through npx) under an init process, so `docker stop` reaches it and it shuts down cleanly.
+    command: ["node", "node_modules/@deepseek-ai/dsh/lib/bin.js", "--profile", "workflow-agent", "--no-open", "--port", "25401"]
+    init: true
+    user: "node"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The dashboards (D13), published to the host's loopback only: the demo's on 25409, the full workbench's on 25410. 25400 is DSH's
+    # own UI, served only with the `dsh-ui` profile. All three runtimes share this service's network namespace.
+    ports:
+      - "127.0.0.1:25409:25409"
+      - "127.0.0.1:25410:25410"
+      - "127.0.0.1:25400:25400"
+    # host.docker.internal (the default model address) on Linux too, where Docker does not define it; the services that share
+    # this one's network (full mode, the DSH UI proxy) get it from here.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NODE_ENV: production
+      PORT: "25401"
+      # In the container, so Docker can publish it; the host sees it on 127.0.0.1 only. A request must name a loopback host.
+      WORKBENCH_DASHBOARD_HOST: 0.0.0.0
+      WORKBENCH_DASHBOARD_PORT: "25409"
+      WORKBENCH_STATE_DIR: /var/lib/workbench/state
+      # The demo runs one scripted synthetic job end to end, with no connector account or model key (A1).
+      WORKBENCH_DEMO: "true"
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://host.docker.internal:4000/v1}
+    volumes:
+      - workbench-demo-state:/var/lib/workbench/state
+      - workbench-demo-dsh:/var/lib/workbench/dsh
+    restart: unless-stopped
+
+  # DSH's own web UI (sessions, "New Session"), only on request: `docker compose --profile dsh-ui up -d` (D13).
+  workbench-proxy:
+    build: .
+    image: ${WORKFLOW_AGENT_IMAGE:-ghcr.io/raisultan/workflow-agent:0.1.0}
+    profiles: ["dsh-ui"]
+    working_dir: /workspace
+    command: ["node", "scripts/loopback-proxy.ts"]
+    user: "node"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: "service:workbench"
+    depends_on:
+      - workbench
+    environment:
+      PROXY_LISTEN_HOST: 0.0.0.0
+      PROXY_LISTEN_PORT: "25400"
+      PROXY_PUBLIC_PORT: "25400"
+      PROXY_TARGET_HOST: 127.0.0.1
+      PROXY_TARGET_PORT: "25401"
+      PROXY_PREFERRED_TARGET_PORT: "25402"
+    restart: unless-stopped
+
+  workbench-full:
+    build: .
+    image: ${WORKFLOW_AGENT_IMAGE:-ghcr.io/raisultan/workflow-agent:0.1.0}
+    profiles: ["full"]
+    working_dir: /workspace
+    command: ["node", "node_modules/@deepseek-ai/dsh/lib/bin.js", "--profile", "workflow-agent", "--no-open", "--port", "25402"]
+    init: true
+    user: "node"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      # Required on Docker Desktop Linux so unprivileged bubblewrap (bwrap) can create user/mount namespaces with cap_drop: [ALL].
+      - seccomp=unconfined
+      # Required so bwrap can mount a fresh /proc for each sandbox (T10.3): the kernel refuses a procfs mount in a user namespace while
+      # Docker's masked /proc paths cover parts of the container's own /proc. Without it each sandbox would see the container's
+      # /proc, including the DSH process's environment. The container stays non-root with no capabilities.
+      - systempaths=unconfined
+      # Required on Linux hosts with AppArmor (Ubuntu, Debian): Docker's default profile denies the mounts bwrap makes. Checked on
+      # stock ubuntu-24.04 (P17, T17.0): without it every sandbox fails closed. Such hosts also need unprivileged user namespaces
+      # allowed (`kernel.apparmor_restrict_unprivileged_userns=0`, docs/getting-started.md). No effect on Docker Desktop for Mac.
+      - apparmor=unconfined
+    network_mode: "service:workbench"
+    depends_on:
+      - workbench
+    environment:
+      NODE_ENV: production
+      PORT: "25402"
+      WORKBENCH_DASHBOARD_HOST: 0.0.0.0
+      WORKBENCH_DASHBOARD_PORT: "25410"
+      # Names besides loopback the dashboard may be reached by (an SSO proxy's), comma separated; none on a Mac.
+      WORKBENCH_DASHBOARD_HOSTS: ${WORKBENCH_DASHBOARD_HOSTS:-}
+      WORKBENCH_STATE_DIR: /var/lib/workbench/state/data
+      WORKBENCH_WORK_DIR: /var/lib/workbench/work/jobs
+      # Who may start a job, besides the profile's `policy.senders`. No default: nobody, until one of them names someone.
+      WORKBENCH_ALLOWED_SENDERS: ${WORKBENCH_ALLOWED_SENDERS:-}
+      # One key and one address are enough: each model variable falls back to its DeepSeek or LiteLLM twin (DEPLOYMENT §4).
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-${LITELLM_API_KEY:-}}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-${DEEPSEEK_BASE_URL:-http://host.docker.internal:4000/v1}}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-${DEEPSEEK_API_KEY:-}}
+      LITELLM_MODEL: ${LITELLM_MODEL:-${DEEPSEEK_MODEL:-deepseek-v4-pro}}
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_TOKEN: ${JIRA_TOKEN:-}
+      JIRA_USERNAME: ${JIRA_USERNAME:-}
+      JIRA_PASSWORD: ${JIRA_PASSWORD:-}
+      JIRA_JQL: ${JIRA_JQL:-}
+      JIRA_BOT_USERNAME: ${JIRA_BOT_USERNAME:-}
+      JIRA_BOT_ACCOUNT_ID: ${JIRA_BOT_ACCOUNT_ID:-}
+      MATTERMOST_BASE_URL: ${MATTERMOST_BASE_URL:-}
+      MATTERMOST_TOKEN: ${MATTERMOST_TOKEN:-}
+      MATTERMOST_BOT_USER_ID: ${MATTERMOST_BOT_USER_ID:-}
+      MATTERMOST_TEAM_ID: ${MATTERMOST_TEAM_ID:-}
+      GITLAB_BASE_URL: ${GITLAB_BASE_URL:-}
+      GITLAB_TOKEN: ${GITLAB_TOKEN:-}
+      GITLAB_PROJECT: ${GITLAB_PROJECT:-}
+      # The repository the example profile serves (.env.example); a profile of your own in config/ need not use them.
+      REPOSITORY_NAME: ${REPOSITORY_NAME:-}
+      REPOSITORY_TARGET_BRANCH: ${REPOSITORY_TARGET_BRANCH:-}
+      REPOSITORY_TEST_COMMAND: ${REPOSITORY_TEST_COMMAND:-}
+      REPOSITORY_REGISTRIES: ${REPOSITORY_REGISTRIES:-}
+      JIRA_PROJECT: ${JIRA_PROJECT:-}
+      MATTERMOST_CHANNEL_ID: ${MATTERMOST_CHANNEL_ID:-}
+      APPROVER_EMAILS: ${APPROVER_EMAILS:-}
+    volumes:
+      - ./cordis.patch.yml:/workspace/cordis.patch.yml:ro
+      # Your profile: config/profile.cordis.patch.yml, laid over the image's on every start; without one, the image's example.
+      - ./config:/etc/workflow-agent:ro
+      - workbench-state:/var/lib/workbench/state
+      - workbench-work:/var/lib/workbench/work
+      - workbench-dsh:/var/lib/workbench/dsh
+      # The shared toolchain cache (D10): written only by the host's setup step, read-only in every sandbox.
+      - workbench-toolchains:/var/lib/workbench/toolchains
+    restart: unless-stopped
+
+volumes:
+  workbench-demo-state:
+  workbench-demo-dsh:
+  workbench-state:
+  workbench-work:
+  workbench-dsh:
+  workbench-toolchains:

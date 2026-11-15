@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Workflow Agent",
+    "description": "A self-hosted coding agent that works through Jira, Mattermost and GitLab, with people approving each step. Built on DeepSeek Harness (DSH)."
+  }
+}

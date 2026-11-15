@@ -1,0 +1,16 @@
+# The services the tests run against. The workbench reads the Postgres major from here; its jobs get RabbitMQ and Kafka as they are.
+test:
+  image: python:3.12
+  services:
+    - postgres:16
+    - rabbitmq:3.13
+    - name: apache/kafka:4.0.0
+      alias: kafka
+  variables:
+    POSTGRES_PASSWORD: postgres
+    DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+    AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  script:
+    - python -m pip install -r requirements-dev.txt
+    - python -m pytest -q

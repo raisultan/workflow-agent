@@ -1,0 +1,46 @@
+# The eval's workbench profile (T11.7, T11.8): the standard profile, with the two synthetic repositories the mock GitLab serves.
+# A job's repository comes from its Mattermost channel (orders-node, orders-python) or repo:<name> in the message; Node is the
+# default. Each lists its approver by email (D12). Mounted over the image's profile by eval/workbench.compose.yml.
+- id: workflow-agent
+  config:
+    stateDir: !!js "process.env.WORKBENCH_STATE_DIR || '/var/lib/workbench/state'"
+    locale: ru
+    demo: false
+    models:
+      default: !!js "`litellm/${process.env.LITELLM_MODEL || 'deepseek-flash'}`"
+    executor:
+      maxWorkers: 2
+    policy:
+      approvers:
+        standard-delivery:
+          jira: ['*']
+          mattermost: ['*']
+          gitlab: ['*']
+    repositories:
+      - name: orders-node
+        project: eval/orders-node
+        testCommand: npm test
+        registries: [npm]
+        approvers: [lead@example.test]
+        match:
+          mattermost: [!!js "process.env.EVAL_CHANNEL_NODE"]
+        default: true
+      - name: orders-python
+        project: eval/orders-python
+        testCommand: python -m pytest -q
+        setupCommand: python -m pip install --quiet -r requirements-dev.txt
+        registries: [pypi]
+        approvers: [lead@example.test]
+        match:
+          mattermost: [!!js "process.env.EVAL_CHANNEL_PYTHON"]
+    workflows:
+      standardDelivery:
+        jiraStatuses:
+          inProgress: In Progress
+          inReview: In Review
+- id: workflow-agent-jira
+  disabled: false
+- id: workflow-agent-mattermost
+  disabled: false
+- id: workflow-agent-gitlab
+  disabled: false

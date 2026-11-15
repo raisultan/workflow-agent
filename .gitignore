@@ -1,0 +1,21 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+node_modules/
+lib/
+dist/
+coverage/
+.artifacts/
+work/
+outputs/
+private/
+state/
+artifacts/
+*.log
+# The eval services' generated passwords, tokens and repositories (eval/README.md).
+eval/.state
+
+# Your deployment profile (config/README.md).
+config/*
+!config/README.md

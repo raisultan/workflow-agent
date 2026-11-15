@@ -1,0 +1,45 @@
+Workflow Agent
+Copyright 2026 raisultan
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Adapted code
+
+This product is adapted from dsh-superagent-prototype
+(https://github.com/deepseek-ai/dsh-superagent-prototype, commit 8c32a9dc5d72c033816c6a8110b37f40cf94fba4),
+Copyright (c) 2026 DeepSeek Harness Team, licensed under the MIT License (third_party/dsh-superagent-prototype.LICENSE).
+docs/UPSTREAM.md, section 3, lists the modules it keeps or adapts; those portions remain available under the MIT License.
+
+It adapts ideas and some wording, without copying files, from:
+- warpdotdev/common-skills (commit 8792394ff1b655e0af451b8fabb68ef0cfcbd208), Copyright (c) 2026 Denver Technologies, Inc.,
+  MIT License (third_party/warpdotdev-common-skills.LICENSE): the review check's severity labels, diff annotation contract and
+  test audit (src/adapters/review-check.ts, src/adapters/work-diff.ts) and the merge-risk categories, weights and thresholds
+  (src/adapters/merge-risk.ts). See docs/UPSTREAM.md, section 4.
+- mattpocock/skills (commit 5863806dd4e15c63174bee4e7515a4256792ecfa), Copyright (c) 2026 Matt Pocock, MIT License
+  (third_party/mattpocock-skills.LICENSE), credited by the merge-risk skill above.
+
+--------------------------------------------------------------------------------
+Bundled in the dashboard (lib/dashboard)
+
+- React, React DOM and scheduler, Copyright (c) Facebook, Inc. and its affiliates, MIT License (third_party/react.LICENSE).
+- The Onest font, Copyright 2021 The Onest Project Authors, and the JetBrains Mono font, Copyright 2020 The JetBrains Mono
+  Project Authors, both under the SIL Open Font License 1.1 (third_party/onest.OFL.txt, third_party/jetbrains-mono.OFL.txt).
+
+--------------------------------------------------------------------------------
+Runtime
+
+Workflow Agent runs on DeepSeek Harness, the @deepseek-ai/* packages, Copyright (c) 2026 DeepSeek, MIT License.
+
+--------------------------------------------------------------------------------
+The container image
+
+Besides the above, the image contains these, unmodified and under their own licences:
+- Debian packages from the base image's release, each with its licence in /usr/share/doc/<package>/copyright, among them
+  PostgreSQL 15-18 (PostgreSQL Licence, from apt.postgresql.org), RabbitMQ (MPL-2.0), Erlang/OTP (Apache-2.0), OpenJDK 17
+  (GPL-2.0 with the Classpath Exception), git (GPL-2.0), bubblewrap (LGPL-2.0-or-later) and the C/C++ build tools.
+- Apache Kafka, in /opt/kafka (Apache-2.0; its own LICENSE and NOTICE are in that directory).
+- mise, in /opt/mise, Copyright (c) 2025 Jeff Dickey, MIT License (third_party/mise.LICENSE).
+- The Node packages in /workspace/node_modules, each with its licence, listed in /workspace/third_party/node-packages.txt
+  (generated when the image is built). A few are MPL-2.0 or LGPL-3.0-or-later; they are shipped unmodified, and their source is
+  available from the npm registry under the name and version listed.

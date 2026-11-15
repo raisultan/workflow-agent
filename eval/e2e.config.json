@@ -1,0 +1,9 @@
+{
+  "model": "deepseek-flash",
+  "prices": {
+    "deepseek-flash": { "input": 0.3, "cachedInput": 0.006, "output": 1.2 },
+    "deepseek-v4-pro": { "input": 1.32, "cachedInput": 0.044, "output": 3.96 }
+  },
+  "postgres": "16",
+  "runTimeoutMinutes": 75
+}
