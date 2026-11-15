@@ -314,7 +314,7 @@ export function fill(text: string, parameters: Readonly<Record<string, string>>)
 
 /**
  * The checks a job runs for `stage`: those with no `when`, and those whose condition its frozen parameters meet. A condition on a
- * parameter the job does not have keeps the check (review): a typo, or a job with no repository, never drops a required check.
+ * parameter the job does not have keeps the check: a typo, or a job with no repository, never drops a required check.
  */
 export function checksOf(workflow: PinnedWorkflow, stage: StageDeclaration): StageDeclaration['checks'] {
   const { parameters } = workflow.extra

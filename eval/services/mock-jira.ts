@@ -149,7 +149,7 @@ export function createInitialMockJiraIssues(baseUrl: string): Map<string, MockJi
   return issues
 }
 
-function toJiraRestIssue(issue: MockJiraIssue, baseUrl: string): Record<string, unknown> {
+function toJiraRestIssue(issue: MockJiraIssue): Record<string, unknown> {
   return {
     id: issue.id,
     key: issue.key,
@@ -202,7 +202,7 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
 }
 
 /**
- * Text for the page, HTML-escaped (review): issue text and comments are written by agents and people during an eval, and the page
+ * Text for the page, HTML-escaped: issue text and comments are written by agents and people during an eval, and the page
  * has a form that posts as a synthetic approver, so nothing interpolated may become markup or script.
  */
 export function esc(value: unknown): string {
@@ -392,7 +392,7 @@ export async function startMockJiraServer(
     }
 
     if (method === 'GET' && pathname === '/rest/api/2/search') {
-      const list = [...issues.values()].map(i => toJiraRestIssue(i, baseUrl))
+      const list = [...issues.values()].map(i => toJiraRestIssue(i))
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify({ issues: list, total: list.length }))
       return
@@ -509,7 +509,7 @@ export async function startMockJiraServer(
       }
       if (method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-        res.end(JSON.stringify(toJiraRestIssue(issue, baseUrl)))
+        res.end(JSON.stringify(toJiraRestIssue(issue)))
         return
       }
       if (method === 'PUT') {

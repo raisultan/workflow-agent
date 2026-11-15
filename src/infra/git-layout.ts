@@ -1,5 +1,5 @@
 /**
- * A cheap first guard on a worktree's repository before the host fetches from it (final review): the repository must be its own.
+ * A cheap first guard on a worktree's repository before the host fetches from it: the repository must be its own.
  * The real protection is that the worktree side of every host fetch (`upload-pack`) runs in the job's sandbox, where every other
  * repository, the state and `$DSH_HOME` are masked (`src/sandbox/`, host profile `fetch`); this guard refuses the known ways a
  * repository reaches outside itself before anything runs:

@@ -1,6 +1,6 @@
 /**
  * The domain assembled on the kernel: the job decider with its lookups, the domain's tables and projections, intake through the
- * router, and the entry points adapters call (`P9`): inbox events, stage reports, usage, safe-output requests and resuming a parked
+ * router, and the entry points adapters call: inbox events, stage reports, usage, safe-output requests and resuming a parked
  * job. Workflow plugins register definitions and guards here; `start` recovers and starts the kernel once they have.
  */
 import type { Submitted } from '../kernel/engine.ts'

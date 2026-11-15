@@ -10,7 +10,7 @@
  *   than reverted (eval `T13.4`: the review reverted what the reviewer asked for).
  * - Its model is the one the manifest froze for the stage, unless the check names its own (`D9`); its tokens count against the
  *   job's budget.
- * - Since `P16` (`D8` amendment) findings carry a severity and evidence the host verifies against a numbered diff, the reviewer
+ * - Findings carry a severity (`P16`, `D8` amendment) and evidence the host verifies against a numbered diff, the reviewer
  *   audits the changed tests first, and the same call returns a merge-risk summary (`merge-risk.ts`). The severity labels, the
  *   annotation contract and the audit are adapted from the `review-pr` skill (warpdotdev/common-skills, MIT); see UPSTREAM §4.
  */
@@ -275,7 +275,7 @@ export type ReviewOutcome =
 export async function reviewChange(llm: Pick<LlmRuntime, 'prepareCall'>, input: { model: string; plan?: string; followUps?: readonly string[]; diff: string; files: readonly string[];
   defaultProvider?: string; timeoutMs?: number; maxChars?: number; language?: 'ru' | 'en' }): Promise<ReviewOutcome> {
   // A partial view could hide the real change behind a large file earlier in path order, so a diff over the budget is not reviewed:
-  // the work gets a finding to make the change smaller (final review). It measures the raw diff, not the annotated one.
+  // the work gets a finding to make the change smaller. It measures the raw diff, not the annotated one.
   const max = input.maxChars ?? REVIEW_MAX_CHARS
   if (input.diff.length > max) {
     return { kind: 'verdict', tokens: 0, review: { verdict: 'changes', summary: 'The change is too large to review in full.', tests: [], unaudited: [], findings: [{ side: 'new',
@@ -328,7 +328,7 @@ const where = (finding: SettledFinding) => finding.file ? `${finding.file}${find
 
 /**
  * What the engineer's next attempt gets from a review (`P16`): only the blocking findings, labelled with their severity, so a doubt
- * or an unverified claim never steers the work (trial 2026-11-14: a retry made a change nobody asked for).
+ * or an unverified claim never steers the work (a retry would otherwise make changes nobody asked for).
  */
 export function reviewEvidence(review: SettledReview): string {
   // The model's own summary is unverified text, so a failing review gives the engineer only the host's line and the verified findings.

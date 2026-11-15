@@ -58,7 +58,7 @@ export type WorkflowsConfig = z.output<typeof WorkflowsSchema>
 
 /**
  * What `registries` stages may reach. A bare `*`, an address and a private name are not allowed: open web access, private registries
- * and internal hosts are out of scope for V2.
+ * and internal hosts are out of scope.
  */
 const EgressSchema = z.object({
   presets: z.array(z.enum(Object.keys(EGRESS_PRESETS) as [string, ...string[]])).default(['npm']),

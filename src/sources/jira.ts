@@ -4,20 +4,22 @@
  * - Outbound cursor-based JQL polling with bot-self-loop suppression.
  * - `jira_get_issue`: returns issue details, comments, parent **Epic**, subtasks, `issuelinks` (`blocks`, `relates to`, etc.),
  *   remote/web links (`/remotelink` — Confluence, specs, external URLs), and attachment metadata.
- * - `jira_read_attachment`: authenticated fetch of plain-text/log/config attachments (`.log`, `.txt`, `.json`, `.yaml`, `.csv`, `.md`, `.sql`, `.xml`, `.diff`);
- *   rejects binary/image attachments in V1.
+ * - `jira_read_attachment_text`: authenticated fetch of plain-text/log/config attachments (`.log`, `.txt`, `.json`, `.yaml`, `.csv`, `.md`, `.sql`, `.xml`, `.diff`);
+ *   rejects binary/image attachments.
  * - `jira_search_issues`: bounded JQL search for connected Epics and tasks.
- * - `jira_add_comment`, `jira_transition_issue`, `jira_update_fields`: idempotent mutations backed by `ActionReceipt`.
+ * - `jira_add_comment`, `jira_transition_issue`, `jira_update_fields`: mutations the writers (`adapters/writers.ts`) make idempotent.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { extname } from 'node:path'
 import { z } from 'zod'
-import type { Trigger } from './types.ts'
-import { JIRA_MAX_CHARS, checkedConnectorText } from '../infra/text.ts'
 import { toJiraMarkup } from '../infra/jira-markup.ts'
-import { ConnectorHttpError, fetchWithRetry } from './http-client.ts'
+import { JIRA_MAX_CHARS, checkedConnectorText } from '../infra/text.ts'
+import { KV } from '../kv.ts'
+import { fetchWithRetry } from './http-client.ts'
 import { health, sourceContext } from './host.ts'
 import type { SourceKind } from './kind.ts'
+import { pause } from './poll.ts'
+import type { Trigger } from './types.ts'
 
 /** Authentication configuration for Jira (`F2`, `G4`). */
 export type JiraAuthConfig =
@@ -70,10 +72,10 @@ const TEXT_MIME_PREFIXES = [
   'application/sql',
 ]
 
-/** Default maximum size in bytes for `jira_read_attachment` (256 KiB). */
+/** Default maximum size in bytes for `jira_read_attachment_text` (256 KiB). */
 export const JIRA_MAX_ATTACHMENT_BYTES = 256 * 1024
 
-/** Returns whether a Jira attachment is eligible for plain-text/log inspection via `jira_read_attachment` (`D5`, `D7`). */
+/** Returns whether a Jira attachment is eligible for plain-text/log inspection via `jira_read_attachment_text` (`D5`, `D7`). */
 export function isReadableTextAttachment(filename: string, mimeType?: string): boolean {
   const ext = extname(filename.toLowerCase())
   if (TEXT_ATTACHMENT_EXTENSIONS.has(ext)) return true
@@ -577,10 +579,10 @@ export class JiraConnector {
   }
 
   /**
-   * Host-brokered `jira_read_attachment` tool (`D5`, `D7`):
+   * Host-brokered `jira_read_attachment_text` tool (`D5`, `D7`):
    * Fetches plain-text/log/config attachments (`.log`, `.txt`, `.json`, `.yaml`, `.csv`, `.md`, `.sql`, `.xml`, `.diff`)
    * using the host's Jira credentials up to `maxBytes` (default 256 KiB).
-   * Rejects binary/image files in V1.
+   * Rejects binary/image files.
    */
   async readTextAttachment(params: {
     issueKey: string
@@ -599,7 +601,7 @@ export class JiraConnector {
   }> {
     if (!isReadableTextAttachment(params.filename, params.mimeType)) {
       throw new Error(
-        `Binary or image attachment "${params.filename}" (${params.mimeType ?? 'unknown'}) is not supported by jira_read_attachment in V1; only plain-text/log/config files are supported`,
+        `Binary or image attachment "${params.filename}" (${params.mimeType ?? 'unknown'}) is not supported by jira_read_attachment_text; only plain-text/log/config files are supported`,
       )
     }
 
@@ -824,9 +826,6 @@ export const jiraKind: SourceKind<JiraSourceConfig> = {
   schema: JiraSourceConfigSchema,
   health: ['jira'],
 }
-
-import { KV } from '../kv.ts'
-import { pause } from './poll.ts'
 
 /**
  * Executes one Jira poll batch, saving cursor progress incrementally per delivered trigger so an abort mid-batch

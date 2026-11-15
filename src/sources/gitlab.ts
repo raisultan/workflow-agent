@@ -1,34 +1,21 @@
 /**
- * GitLab outbound-polling connector and host-brokered branch/MR tools (`F2`, `F8`, `D5`):
- * - Polls bound Merge Requests for review notes/discussions and pipeline status transitions without requiring inbound webhooks.
+ * GitLab outbound-polling connector and the host's side of the branch and merge request tools (`F2`, `F8`, `D5`):
+ * - Polls bound Merge Requests for review notes/discussions, pipeline status transitions and merge state, without inbound webhooks.
  * - Suppresses system notes and the notes it posts itself, recognized by note id, so it can share a person's account and token.
- * - `gitlab_push_branch`: enforces non-force pushes strictly to `agent/<issue-key>-<ascii-slug>` branches (`D5`, `D6`).
- * - `gitlab_create_mr`, `gitlab_update_mr`, `gitlab_reply_discussion`: idempotent mutations backed by `ActionReceipt` (`A4`).
- * - `gitlab_get_mr`, `gitlab_list_discussions`: read MR metadata, pipeline status, and review threads.
+ * - Pushes without force, and only to `agent/<issue-key>-<ascii-slug>` branches (`D5`, `D6`).
+ * - Opens and edits merge requests and posts notes; the writers (`adapters/writers.ts`) make those idempotent (`A4`).
+ * - Reads merge request metadata, pipeline status, failed job logs and review threads.
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { z } from 'zod'
-import type { Trigger } from './types.ts'
-import { GITLAB_MAX_CHARS, checkedConnectorText, isRussianText } from '../infra/text.ts'
-import { ConnectorHttpError, fetchWithRetry, scrubSecret } from './http-client.ts'
 import { redactCredentials } from '../infra/redact.ts'
+import { GITLAB_MAX_CHARS, checkedConnectorText } from '../infra/text.ts'
+import { KV } from '../kv.ts'
+import { fetchWithRetry, scrubSecret } from './http-client.ts'
 import { health, sourceContext } from './host.ts'
 import type { SourceKind } from './kind.ts'
-
-const execFileAsync = promisify(execFile)
-
-async function resolveWorktreeHeadSha(worktreeDir: string): Promise<string | undefined> {
-  if (!worktreeDir.trim()) return undefined
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', worktreeDir, 'rev-parse', 'HEAD'])
-    const sha = stdout.trim()
-    return sha || undefined
-  } catch {
-    return undefined
-  }
-}
+import { pause } from './poll.ts'
+import type { Trigger } from './types.ts'
 
 /** Configuration for the GitLab connector (`F2`, `D5`). */
 export interface GitLabConfig {
@@ -37,7 +24,7 @@ export interface GitLabConfig {
   fetchImpl?: typeof fetch
   maxRetries?: number
   baseBackoffMs?: number
-  /** Pluggable host git push runner used by `gitlab_push_branch`. */
+  /** The host's git push, which `pushCommit` runs. */
   gitPushRunner?: (params: {
     worktreeDir: string
     project: string
@@ -207,7 +194,7 @@ export class GitLabConnector {
 
       try {
         // 1. Poll MR notes with pagination, through their discussions: each note keeps its discussion's id, so an answer to it is
-        //    posted under it (trial 2026-11-14), not as a new note. Notes are taken oldest first, as before.
+        //    posted under it, not as a new note. Notes are taken oldest first.
         const discussions = await this.requestPaginatedJson<{ id: string; notes?: {
           id: number
           body: string
@@ -223,7 +210,7 @@ export class GitLabConnector {
           if (seenNotes.has(noteKey)) continue
           seenNotes.add(noteKey)
 
-          // Suppress system notes and self-loops (`A8`): the notes `replyToDiscussion` posted, recognized by id or text rather than by
+          // Suppress system notes and self-loops (`A8`): the notes the workbench posted, recognized by id or text rather than by
           // author, as the token may be a person's.
           if (note.system) continue
           if (isSelfAuthored?.(noteKey, note.body)) continue
@@ -431,7 +418,7 @@ export class GitLabConnector {
   }
 
   /**
-   * Posts a note on a merge request (in a discussion, when given). V2 writers end its body with a hidden marker carrying their
+   * Posts a note on a merge request (in a discussion, when given). The writers end its body with a hidden marker carrying their
    * idempotency key (`T9.2`). Returns its id and the server's creation time.
    */
   async createNote(input: { project: string; mrIid: number; body: string; discussionId?: string }): Promise<{ id: number; createdAt: number }> {
@@ -491,7 +478,7 @@ export class GitLabConnector {
 
   /**
    * The last `maxChars` of a CI job's log (`T10.5`), as plain text: terminal colour codes and GitLab's section markers removed, and
-   * credentials redacted (the connector's token, and what `redactCredentials` finds). The read is bounded (final review): only the
+   * credentials redacted (the connector's token, and what `redactCredentials` finds). The read is bounded: only the
    * tail is asked for (`Range`), and a server that sends the whole log is read through a window of the last bytes, up to a cap.
    * Redaction runs on that window before the tail is cut, with the window's partial first line dropped, so a cut never splits a
    * secret from its name.
@@ -538,11 +525,6 @@ export class GitLabConnector {
     const pushed = await this.config.gitPushRunner({ worktreeDir: input.worktreeDir, project: input.project, branch, commitSha: input.sha })
     return { branch, sha: pushed.commitSha }
   }
-
-
-
-
-
 }
 
 export const GitLabSourceConfigSchema = z.object({
@@ -586,10 +568,6 @@ export const gitlabKind: SourceKind<GitLabSourceConfig> = {
   schema: GitLabSourceConfigSchema,
   health: ['gitlab'],
 }
-
-import { KV } from '../kv.ts'
-import { pause } from './poll.ts'
-
 
 /**
  * Executes one GitLab poll batch, saving cursor progress incrementally per delivered trigger so an abort mid-batch

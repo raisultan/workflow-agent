@@ -7,7 +7,7 @@
  * `push` therefore fetches the worktree's `HEAD` into a fresh host-owned bare repository (`upload-pack` runs no hooks and takes no
  * worker-set command from repository config) and pushes from there. The repository must be its own (`assertOwnRepository`: no
  * `gitdir:` file, `commondir`, alternates or symbolic link in `.git`), and when the host gives `uploadPack`, the worktree's
- * `upload-pack` runs in the job's sandbox (host profile `fetch`), where no other repository is visible (final review): otherwise
+ * `upload-pack` runs in the job's sandbox (host profile `fetch`), where no other repository is visible: otherwise
  * a layout the agent wrote could push another job's code under this job's branch.
  */
 import { execFile } from 'node:child_process'
@@ -72,7 +72,7 @@ export function createGitTransport(config: GitTransportConfig): GitTransport {
     async push({ worktreeDir, project, branch, commitSha, uploadPack }) {
       // The repository must be its own: a gitdir file, commondir, alternates or a link in .git could name another job's repository.
       await assertOwnRepository(worktreeDir).catch(error => { throw error instanceof GitLayoutError ? new GitTransportError(error.message) : error })
-      const scratch = await mkdtemp(join(tmpdir(), 'awb-push-'))
+      const scratch = await mkdtemp(join(tmpdir(), 'workflow-agent-push-'))
       try {
         await exec(['init', '--quiet', '--bare', scratch])
         // The token is not in this fetch's environment: it reads the worktree only. Its upload-pack runs in the job's sandbox.

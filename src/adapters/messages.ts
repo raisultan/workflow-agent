@@ -35,7 +35,7 @@ export interface RenderContext {
 }
 
 /**
- * How every post is laid out (2026-11-15), the same in Mattermost, Jira and GitLab: an emoji that says what kind of post it is and a
+ * How every post is laid out, the same in Mattermost, Jira and GitLab: an emoji that says what kind of post it is and a
  * short headline, then the details (each fact on its own line or list item, people's and a model's words quoted), then, after a
  * blank line, a `👉` line that says what to answer. Blocks are separated by blank lines, so a list never swallows the line after it.
  * A proposal keeps its own number (`p2` is 2) as a bold label on a bullet: an ordered list would renumber it from 1.
@@ -323,8 +323,8 @@ function reasonText(context: RenderContext, reason: BlockReason): string {
 const DETAIL_MAX = 1500
 
 /**
- * Text the workbench quotes but did not write (a check's evidence, a model's review, an agent's reason), made inert for a chat post
- * (final review): mentions (`@name`, Jira's `[~name]`) and links (`scheme://`, `www.`) are broken with a zero-width space so they
+ * Text the workbench quotes but did not write (a check's evidence, a model's review, an agent's reason), made inert for a chat post:
+ * mentions (`@name`, Jira's `[~name]`) and links (`scheme://`, `www.`) are broken with a zero-width space so they
  * notify no one and link nowhere, and the text is cut to `max` characters.
  */
 export function inert(text: string, max: number): string {
@@ -495,7 +495,7 @@ function quoted(text: string): string {
 }
 
 /**
- * GitLab renders a single newline as a space (CommonMark), so a post's lines would run together there (trial, 2026-11-15). Each line
+ * GitLab renders a single newline as a space (CommonMark), so a post's lines would run together there. Each line
  * followed by another that does not start a block of its own (a list item, a heading, a table, a rule, a fence) ends in a hard break
  * (two spaces); code is left as it is.
  */

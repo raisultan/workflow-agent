@@ -53,7 +53,7 @@ const TOOLS: Record<string, (t: T, step: ToolStep, args: Args) => Shown> = {
   grep: (t, step, args) => ({ icon: 'search', tone: 'mute', label: 'step.searched', head: <span className="mono ink">«{str(args.pattern)}»{args.path ? ` · ${str(args.path)}` : ''}</span>,
     body: <Output t={t} step={step} /> }),
   glob: (t, step, args) => ({ icon: 'search', tone: 'mute', label: 'step.listed', head: <span className="mono ink">{str(args.pattern)}</span>, body: <Output t={t} step={step} /> }),
-  workbench_stage_report: (t, _step, args) => {
+  workbench_stage_report: (_t, _step, args) => {
     const items = Array.isArray(args.items) ? (args.items as Args[]).map((item, index) => `${index + 1}. ${str(item.text)}`).join('\n') : ''
     const text = str(args.summary ?? args.reason) || items
     return { icon: 'flag', tone: 'ok', label: 'step.report', head: <Tag tone={args.outcome === 'completed' ? 'ok' : 'wait'}>{str(args.outcome)}</Tag>,

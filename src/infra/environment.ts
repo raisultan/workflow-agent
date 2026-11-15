@@ -1,6 +1,4 @@
-/**
- * Process environment and git configuration helpers that isolate worker subprocesses.
- */
+/** Process environment and git configuration helpers that isolate worker subprocesses. */
 import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
@@ -8,15 +6,15 @@ import type { SubprocessOutputReader, SubprocessRuntime } from '@deepseek-ai/dsh
 import type { Deployment } from '../deployment.ts'
 import { SetupError } from '../setup.ts'
 import { CliError } from './commands.ts'
+import { GIT_LOCATION, STRIPPED_WORKER_ENV_KEYS, WORKER_FORBIDDEN_ENV_PATTERN } from './worker-env.ts'
 
 const MARKER = '# Written by workflow-agent on every start; edits are lost.'
-/** Markers of files written under the project's earlier names (`dsh-tag`, `dsh-go`, `dsh-freelancer`, `dsh-superagent`), which `workflow-agent` owns and replaces too. */
+/** Markers of files written under the project's earlier names, which `workflow-agent` owns and replaces too. */
 const LEGACY_MARKERS = ['dsh-tag', 'dsh-go', 'dsh-freelancer', 'dsh-superagent'].map(name => `# Written by ${name} on every start; edits are lost.`)
 export const workerBin = (stateDir: string): string => join(stateDir, 'worker-bin')
 export const workerGitConfig = (stateDir: string): string => join(stateDir, 'worker-gitconfig')
 
-export { GIT_LOCATION, STRIPPED_WORKER_ENV_KEYS, WORKER_FORBIDDEN_ENV_PATTERN } from './worker-env.ts'
-import { GIT_LOCATION, STRIPPED_WORKER_ENV_KEYS, WORKER_FORBIDDEN_ENV_PATTERN } from './worker-env.ts'
+export { GIT_LOCATION, STRIPPED_WORKER_ENV_KEYS, WORKER_FORBIDDEN_ENV_PATTERN }
 
 export function sameDirectory(a: string, b: string): boolean {
   const real = (path: string): string => { try { return realpathSync(path) } catch { return resolve(path) } }
@@ -70,7 +68,10 @@ export function agentVariables(
   }
 }
 
-/** True when a regular file starts with the workflow-agent marker in its first two lines; a symbolic link, directory, or other non-regular file never counts as written by workflow-agent. */
+/**
+ * True when a regular file has a workflow-agent marker in its first two lines; a symbolic link, directory, or other non-regular file
+ * never counts as written by workflow-agent.
+ */
 async function written(file: string): Promise<boolean> {
   if (!(await lstat(file)).isFile()) return false
   const head = (await readFile(file, 'utf8')).split('\n', 2)
@@ -110,7 +111,8 @@ export const WORKER_GITCONFIG_CONTENT = [
 ].join('\n')
 
 /**
- * Atomically writes the isolated worker git configuration file into the state directory and cleans up any legacy shims in `worker-bin`, refusing to overwrite foreign files.
+ * Atomically writes the isolated worker git configuration file into the state directory and removes the command shims earlier
+ * versions left in `worker-bin`, refusing to overwrite or remove files it did not write.
  */
 export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir'>): Promise<void> {
   const { stateDir } = deployment
@@ -160,5 +162,5 @@ export async function runAsWorker(subprocess: SubprocessRuntime, argv: string[],
   const read = (reader: SubprocessOutputReader | undefined): string => reader?.readFrom(0).text ?? ''
   if (exitCode === 0) return read(handle.collected.stdout)
   const ended = exitCode === null ? 'was stopped before it finished' : `exited with ${exitCode}`
-  throw new CliError(read(handle.collected.stderr).trim() || `${argv.join(' ')} ${ended}`, undefined, exitCode ?? undefined)
+  throw new CliError(read(handle.collected.stderr).trim() || `${argv.join(' ')} ${ended}`, exitCode ?? undefined)
 }

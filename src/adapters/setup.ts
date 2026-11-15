@@ -9,7 +9,8 @@
  * 4. **The toolchains**: for each tool, under the host profile `toolchain` (no worktree, only the cache writable, the toolchain
  *    proxy): `mise install <backend>:<tool>@<version>`, then `mise where` for the exact version's directory. The host checks that
  *    the directory is inside the cache's installs and is named by a plain version, then runs the tool's version command there,
- *    under the host profile `verify` (no network, the cache read-only), and checks it prints that version; a tool that fails the check is reinstalled once (`--force`), and blocks if it fails again.
+ *    under the host profile `verify` (no network, the cache read-only), and checks it prints that version; a tool that fails the
+ *    check is reinstalled once (`--force`), and blocks if it fails again.
  * 5. **A virtual environment** for a job with Python (`T11.5`), at `<worktree>/.home/venv`, made with the pinned Python under the host
  *    profile `setup`: every sandbox of the job puts it first on `PATH`, so `pip install` lands in the job's home, never the cache.
  * 6. **The setup command**, if the profile has one, under the host profile `setup`: in the job's worktree, with the `registries`
@@ -137,7 +138,7 @@ async function setUp(deps: SetupDeps, jobId: string, signal: AbortSignal, log: s
         const directory = where.exitCode === 0 ? installedDirectory(where.stdout, installs, tool.dir) : undefined
         if (!directory) throw new Blocked(`${pinned.tool} ${pinned.version}: mise did not name an installed directory of its own`)
         const bin = tool.bin === '.' ? directory.path : join(directory.path, tool.bin)
-        // Offline, with the cache read-only: what runs here is the downloaded binary (review).
+        // Offline, with the cache read-only: what runs here is the downloaded binary.
         const version = await step([join(bin, tool.exe), tool.version], 'verify', root, 60_000)
         return version.exitCode === 0 && printsVersion(version.output, directory.version) ? { version: directory.version, bin } : undefined
       }

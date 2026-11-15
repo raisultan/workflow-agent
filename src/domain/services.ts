@@ -6,7 +6,7 @@
  * - Otherwise the major of every `postgres` (or `postgresql`) image tag; two different majors take the newest, with a note.
  * - No tag, or one with no plain major (`$PG_VERSION`, `latest`): the newest the image has, with a note.
  * - A CI or Compose file the host could not read or parse is an error, unless the profile names the major: it may name another
- *   major, and guessing would test against the wrong one (review).
+ *   major, and guessing would test against the wrong one.
  * - A major the image does not have is an error: the setup step blocks and says which.
  * - RabbitMQ and Kafka have one version each; a tag naming another major gets a note, and the job runs.
  */

@@ -1,4 +1,4 @@
-/** How the wrapper and the bridge end when their command ends, so DSH sees what the command did (final review). */
+/** How the wrapper and the bridge end when their command ends, so DSH sees what the command did. */
 import { constants } from 'node:os'
 
 /** The shell's exit status for a command that ended with `code` or was killed by `signal`: `128 + n` for a signal. */

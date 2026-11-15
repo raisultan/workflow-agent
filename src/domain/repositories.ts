@@ -13,10 +13,10 @@
  * 4. the deployment's default.
  *
  * A `repo:` naming no profile, or no rule and no default, chooses nothing: the workbench replies with the names of the repositories
- * this sender may use, and no job starts. Two refusals start no job either, with a reply that says why (`D10`, note of
- * 2026-11-12): a `repo:` naming another repository than the one the thread maps to by its Jira project or channel, and a sender
- * that the chosen repository's own `senders` do not list. Rules that match more than one profile are refused when the configuration is loaded, so a choice never depends on
- * order. The chosen profile is frozen in the job's run manifest.
+ * this sender may use, and no job starts. Two refusals start no job either, with a reply that says why (`D10`): a `repo:`
+ * naming another repository than the one the thread maps to by its Jira project or channel, and a sender that the chosen
+ * repository's own `senders` do not list. Rules that match more than one profile are refused when the configuration is loaded, so a
+ * choice never depends on order. The chosen profile is frozen in the job's run manifest.
  */
 import { z } from 'zod'
 import type { Actor } from './policy.ts'
@@ -120,7 +120,7 @@ export function explicitRepositories(text: string): string[] {
 }
 
 /**
- * Whether `sender` may start a job on `profile` (`D10`, 2026-11-12 note): with no `senders`, anyone the global policy allows; with
+ * Whether `sender` may start a job on `profile` (`D10`): with no `senders`, anyone the global policy allows; with
  * `senders`, only those listed for the sender's source (case-insensitively, as the global policy compares). The global check runs
  * first, in the router; both apply.
  */
@@ -146,7 +146,7 @@ export function chooseRepository(profiles: readonly RepositoryProfile[], trigger
       const odd = named.findIndex(profile => profile !== first)
       return { kind: 'none', requested: explicit[odd === -1 ? 0 : odd] || explicit[0]!, names }
     }
-    // The thread already belongs to a repository: `repo:` may name it, never another (review).
+    // The thread already belongs to a repository: `repo:` may name it, never another.
     if (mapped && mapped !== first) return { kind: 'refused', reason: 'contradicts', repository: first.name, mapped: mapped.name }
     candidate = first
     basis = 'explicit'

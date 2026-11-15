@@ -1,6 +1,7 @@
 /** Checks that let a stage finish (`T9.13`): a confined command in the worktree, and GitLab CI for the pushed commit. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { approvedPlan, checkHandler, followUpsSince, lastMergeRequest, lastPushedSha, redactCredentials, serviceFailure } from '../src/adapters/checks.ts'
+import { approvedPlan, checkHandler, followUpsSince, lastMergeRequest, lastPushedSha, serviceFailure } from '../src/adapters/checks.ts'
+import { redactCredentials } from '../src/infra/redact.ts'
 import { WorkDiffError, type DiffFile, type WorkDiff } from '../src/adapters/work-diff.ts'
 import { standardDelivery } from '../src/workflows/standard-delivery.ts'
 import { FakeLlm, llmContext } from './fixtures/fake-llm.ts'

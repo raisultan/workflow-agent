@@ -1,7 +1,7 @@
 /**
- * The RU/EN vocabulary fast path (`T8.9`), ported from `src/core/approval.ts`, whose copy is deleted in `P9`. A short standalone
- * reply decides a gate without a model: an approval (`ок`, `LGTM`, `go ahead`), a cancellation (`стоп`, `/cancel`) or a retry
- * (`повтори`, `/retry`); on a finished job, a close (`закрой`). A reply with a qualifier (`"Ок, но…"`) or anything longer never matches, so it goes to the model.
+ * The RU/EN vocabulary fast path (`T8.9`). A short standalone reply decides a gate without a model: an approval (`ок`, `LGTM`,
+ * `go ahead`), a cancellation (`стоп`, `/cancel`) or a retry (`повтори`, `/retry`); on a finished job, a close (`закрой`). A reply
+ * with a qualifier (`"Ок, но…"`) or anything longer never matches, so it goes to the model.
  */
 
 const STANDALONE_APPROVAL_TOKENS = new Set([

@@ -89,8 +89,8 @@ services:
       # Docker's masked /proc paths cover parts of the container's own /proc. Without it each sandbox would see the container's
       # /proc, including the DSH process's environment. The container stays non-root with no capabilities.
       - systempaths=unconfined
-      # Required on Linux hosts with AppArmor (Ubuntu, Debian): Docker's default profile denies the mounts bwrap makes. Checked on
-      # stock ubuntu-24.04 (P17, T17.0): without it every sandbox fails closed. Such hosts also need unprivileged user namespaces
+      # Required on Linux hosts with AppArmor (Ubuntu, Debian): Docker's default profile denies the mounts bwrap makes. On
+      # stock ubuntu-24.04, without it every sandbox fails closed. Such hosts also need unprivileged user namespaces
       # allowed (`kernel.apparmor_restrict_unprivileged_userns=0`, docs/getting-started.md). No effect on Docker Desktop for Mac.
       - apparmor=unconfined
     network_mode: "service:workbench"

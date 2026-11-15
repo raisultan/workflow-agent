@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
-import { scrubbedParentEnv, type SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { EGRESS_PRESETS, EgressProxy, TOOLCHAIN_HOSTS, type EgressRecord } from '../src/adapters/egress.ts'
 import { setupHandler } from '../src/adapters/setup.ts'
@@ -209,7 +209,7 @@ async function main(): Promise<void> {
   const rules = integrityFindings(diff.files).map(finding => finding.rule)
   check('test tampering is detected, through the confined upload-pack', 'skip-marker', rules.includes('skip-marker') && confined !== undefined, rules.join(', '))
 
-  // 7. A host fetch from a worktree whose repository reaches another job's (final review): smoke-c borrows smoke-b's objects
+  // 7. A host fetch from a worktree whose repository reaches another job's: smoke-c borrows smoke-b's objects
   // (alternates) and links its branch to smoke-b's ref; smoke-b holds a committed secret.
   git(jobB, 'init', '-q', '-b', 'main'); git(jobB, 'add', '.'); git(jobB, 'commit', '-qm', 'other job')
   mkdirSync(jobC, { recursive: true })
@@ -358,7 +358,7 @@ async function toolchains(ctx: Context, host: SandboxHost, shell: Shell, fetchCo
   check('the toolchain profile refuses any other command', 'workbench-sandbox refusal', sneak.exitCode !== 0 && sneak.output.includes('workbench-sandbox: ')
     && !existsSync(join(toolchainsDir, 'PWNED-sneak')), sneak.output)
   downloads.close('smoke-d')
-  // A tampered binary in the cache (review): its version command tries to change the cache and to reach out; under the host
+  // A tampered binary in the cache: its version command tries to change the cache and to reach out; under the host
   // profile verify, where the setup step runs it, it can do neither.
   const fake = join(toolchainsDir, 'data', 'installs', 'smoke-probe', '1.0.0', 'bin')
   mkdirSync(fake, { recursive: true })
@@ -388,7 +388,7 @@ async function toolchains(ctx: Context, host: SandboxHost, shell: Shell, fetchCo
     + 'ls $HOME/.npm-global/lib/node_modules; python -c "import six; print(six.__file__)"')
   check('npm i -g and pip install land in the job\'s home', `${jobD}/.home/.npm-global, ${jobD}/.home/venv`, globals.out.includes('left-pad')
     && globals.out.includes(`${jobD}/.home/venv/lib/`), globals.out)
-  // A package with no wheel builds from source with the image's compiler and headers, through the registries proxy (review).
+  // A package with no wheel builds from source with the image's compiler and headers, through the registries proxy.
   const native = await d('python -m pip install --quiet --no-binary psycopg2 psycopg2==2.9.10 2>&1 | tail -3; python -c "import psycopg2; print(\'psycopg2\', psycopg2.__version__)"')
   check('a package with native code builds from source in an implement sandbox (psycopg2 against libpq)', 'psycopg2 2.9.10', /psycopg2 2\.9\.10/u.test(native.out), native.out)
   const goFetch = await d('go mod download -x github.com/google/uuid 2>&1 | tail -1; go list -m github.com/google/uuid; GOPROXY=direct go mod download github.com/google/uuid@v1.5.0 2>&1 | tail -1')

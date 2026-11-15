@@ -589,7 +589,7 @@ function effectResult(d: Decision, command: Extract<KernelCommand, { kind: 'effe
       const payload = command.payload as SetupPayload
       if (status.kind !== 'setting_up' || status.n !== payload.n) return undefined
       // A restart interrupts the setup step: it runs again once. Interrupted again (a setup command that takes the host down, say),
-      // the job blocks rather than loop (review).
+      // the job blocks rather than loop.
       if (!ok && command.interrupted === true) {
         if (!status.afterInterruption) d.setup(true)
         else d.block({ kind: 'setup_blocked', detail: 'the setup step was interrupted by a restart twice in a row' }, { kind: 'setup' })

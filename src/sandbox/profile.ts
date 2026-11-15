@@ -22,7 +22,7 @@
  *   runs any repository configuration it can see, `T11.0`), an empty `/tmp` as its working directory, only the toolchain cache
  *   writable, the job's toolchain proxy, mise's settings fixed here (paranoid, precompiled Python only, no versions host, every
  *   backend but `core` and `aqua` disabled), and only `mise install` or `mise where`. The host profile `verify` runs an installed
- *   binary's version command, and nothing else, with no worktree, no network and the cache read-only (review), so a tampered binary
+ *   binary's version command, and nothing else, with no worktree, no network and the cache read-only, so a tampered binary
  *   that got past `mise`'s checks cannot reach the network or change the cache. The host profile `setup` runs the repository's
  *   setup command: as `check`, with the job's `registries` proxy.
  * - **Test services** (`T12.3`, `D11`). An agent's writable shell and the host profile `check`, for a job whose file names its
@@ -58,7 +58,7 @@ export type Egress = StageEgress | 'toolchain'
  * A host-run command's profile. `check`: the job's test command, offline, with its worktree writable. `fetch`: git's `upload-pack`
  * on the worktree's side of a fetch the host makes (the integrity diff, a push), offline, with the worktree read-only and everything
  * else masked, so a repository layout the agent wrote (alternates, `commondir`, symbolic links in `.git`) cannot reach another
- * job's repository, the state or `$DSH_HOME` (final review).
+ * job's repository, the state or `$DSH_HOME`.
  */
 export type HostProfile = 'check' | 'fetch' | 'toolchain' | 'verify' | 'setup'
 const HOST_PROFILES = new Set<string>(['check', 'fetch', 'toolchain', 'verify', 'setup'])
@@ -331,7 +331,7 @@ function planToolchain(input: PlanInput, profile: { mode: 'read-only' | 'workspa
 }
 
 /**
- * The post-install check (review): an installed binary's `--version` (or `version`) and nothing else, with no worktree, no network,
+ * The post-install check: an installed binary's `--version` (or `version`) and nothing else, with no worktree, no network,
  * and the cache read-only like the rest of the root, so a binary that is not what it claims cannot reach out or change the cache.
  */
 function planVerify(input: PlanInput, profile: { mode: 'read-only' | 'workspace-write'; command: string[] }, job: JobFile): Plan {

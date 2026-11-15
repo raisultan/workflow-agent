@@ -48,7 +48,7 @@ export function readServiceImages(worktree: string): { images: NamedImage[]; unr
     let document: Value
     try {
       // GitLab's `!reference` tags read as empty. Aliases are limited, so a small file cannot expand without bound, but well above
-      // the parser's default of 100, which large CI files with nested anchors exceed (review); the 64 KiB cap bounds the work.
+      // the parser's default of 100, which large CI files with nested anchors exceed; the 64 KiB cap bounds the work.
       const parsed = parseDocument(read.text, { merge: true, uniqueKeys: false, customTags: [{ tag: '!reference', collection: 'seq', resolve: () => null }] })
       if (parsed.errors.length > 0) throw parsed.errors[0]
       document = parsed.toJS({ maxAliasCount: 10_000 })

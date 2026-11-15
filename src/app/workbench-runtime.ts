@@ -1,8 +1,8 @@
 /**
- * The composition root of Workflow Agent V2 (`T9.8`, `D8` decision 13): the workbench (kernel and domain) with its typed services,
+ * The composition root of Workflow Agent (`T9.8`, `D8` decision 13): the workbench (kernel and domain) with its typed services,
  * the adapters that connect it to DSH and the work tools, and the host Sources talk to.
  *
- * - **Workflows** from configuration: `standard-delivery@5`, whose parameters come from each job's repository profile (`T11.1`),
+ * - **Workflows** from configuration: `standard-delivery`, whose parameters come from each job's repository profile (`T11.1`),
  *   the synthetic hotfix for the demo, and the operator's modules.
  * - **Effects**: posts, notices and safe-output writes (`writers.ts`), reply verdicts (`verdict.ts`), stage attempts and steering
  *   (`stage-runner.ts`), checks (`checks.ts`), and the setup step (`setup.ts`, `T11.4`) with its toolchain proxy.
@@ -32,7 +32,7 @@ import { readTools } from '../adapters/read-tools.ts'
 import { safeOutputTools } from '../adapters/safe-output.ts'
 import { StageRunner } from '../adapters/stage-runner.ts'
 import { parseThread } from '../adapters/threads.ts'
-import { EgressProxy, TOOLCHAIN_HOSTS } from '../adapters/egress.ts'
+import { EgressProxy, TOOLCHAIN_HOSTS, type EgressRecord } from '../adapters/egress.ts'
 import { setupHandler } from '../adapters/setup.ts'
 import { SandboxHost } from '../adapters/sandbox-host.ts'
 import { followUpHandler, verdictHandler } from '../adapters/verdict.ts'
@@ -43,18 +43,16 @@ import { readingHandler } from '../adapters/reading.ts'
 import { actionHandler, noticeHandler, postHandler, type Connectors } from '../adapters/writers.ts'
 import { allowlistOf, type WorkbenchConfig } from '../config.ts'
 import type { ReceiveResult } from '../sources/types.ts'
-import type { Deployment } from '../deployment.ts'
 import type { GuardInput } from '../domain/decider.ts'
 import type { JobState } from '../domain/job.ts'
 import { jobLocale, stageOf, stageTitleIn, type WorkflowSpec } from '../domain/definition.ts'
 import { eligible, type Actor, type Policy } from '../domain/policy.ts'
 import { repositoryParameters, type RepositoryProfile } from '../domain/repositories.ts'
 import { Workbench } from '../domain/workbench.ts'
-import { Commands } from '../infra/commands.ts'
-import { agentVariables, runAsWorker, withoutDirectory, workerBin, workerGitConfig, writeEnvironment } from '../infra/environment.ts'
+import { runAsWorker, workerGitConfig, writeEnvironment } from '../infra/environment.ts'
 import { HealthBoard } from '../infra/health.ts'
 import { excludeJobHome } from '../infra/git-layout.ts'
-import { GITLAB_MAX_CHARS, IM_MAX_CHARS, JIRA_MAX_CHARS } from '../infra/text.ts'
+import { maxCharsFor } from '../infra/text.ts'
 import { stopBackground } from '../executor/background.ts'
 import { createGitTransport } from '../sources/git-transport.ts'
 import { GitLabConnector, resolveGitLabConfig, type GitLabSourceConfig } from '../sources/gitlab.ts'
@@ -143,7 +141,6 @@ export class WorkbenchRuntime extends Service implements SourceHost {
   private readonly options: WorkbenchRuntimeOptions
   private readonly stopped = new AbortController()
   private readonly releaseLock: () => void
-  private readonly commands: Commands
   private readonly sandbox: SandboxHost
   private readonly egress: EgressProxy
   /** The proxy of the setup step's toolchain installs (`T11.4`), with the toolchain allowlist; no stage reaches it. */
@@ -176,8 +173,6 @@ export class WorkbenchRuntime extends Service implements SourceHost {
         parameters: (id, repository) => this.parameters(id, repository), repositories: () => this.intakeRepositories(), ownPost, locale: config.locale })
       provideWorkbench(ctx, this.workbench, () => this.policy())
       this.sources = new SourceRegistry(this.health)
-      this.commands = new Commands(() => this.deployment, { ...agentVariables(config.stateDir),
-        PATH: withoutDirectory(process.env.PATH ?? '', workerBin(config.stateDir)) }, this.lifetime)
       const writerDeps = { connectors: () => this.connectors(), worktree: (jobId: string) => this.worktree(jobId),
         lastPushed: (jobId: string) => lastPushedSha(this.workbench, jobId), addressee: (jobId: string) => this.addressee(jobId),
         renderContext: (jobId: string, source: 'mattermost' | 'jira' | 'gitlab') => this.renderContext(jobId, source) }
@@ -189,15 +184,16 @@ export class WorkbenchRuntime extends Service implements SourceHost {
       this.sandbox = new SandboxHost({ stateDir: config.stateDir, workRoot: config.workRoot, dshHome, gitConfig: workerGitConfig(config.stateDir),
         bridge: join(packageRoot(), 'lib', 'sandbox-bridge.js'), ...toolchains ? { toolchains: toolchains.root, mise: toolchains.mise } : {},
         ...services ? { services: services.root } : {} })
+      const record = (entry: EgressRecord) => {
+        this.workbench.kernel.db.run(`INSERT INTO egress_connection (job_id, attempt_id, host, port, address, allowed, reason, at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, entry.jobId, entry.attemptId ?? null, entry.host, entry.port, entry.address ?? null,
+          entry.allowed ? 1 : 0, entry.reason, this.workbench.kernel.env.clock.now())
+      }
       this.egress = new EgressProxy({ dir: join(config.stateDir, 'sandbox', 'proxy'), allowlist: config.egress.allowlist,
         allowlistOf: jobId => allowlistOf(config.egress, this.jobRepository(jobId)?.registries ?? config.egress.presets),
-        attemptOf: jobId => connectionLabel(this.workbench.kernel.engine.job(jobId)?.state),
-        record: entry => this.workbench.kernel.db.run(`INSERT INTO egress_connection (job_id, attempt_id, host, port, address, allowed, reason, at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, entry.jobId, entry.attemptId ?? null, entry.host, entry.port, entry.address ?? null, entry.allowed ? 1 : 0, entry.reason, this.workbench.kernel.env.clock.now()) })
+        attemptOf: jobId => connectionLabel(this.workbench.kernel.engine.job(jobId)?.state), record })
       this.toolchainEgress = new EgressProxy({ dir: join(config.stateDir, 'sandbox', 'toolchain-proxy'), allowlist: TOOLCHAIN_HOSTS,
-        attemptOf: () => 'setup',
-        record: entry => this.workbench.kernel.db.run(`INSERT INTO egress_connection (job_id, attempt_id, host, port, address, allowed, reason, at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, entry.jobId, entry.attemptId ?? null, entry.host, entry.port, entry.address ?? null, entry.allowed ? 1 : 0, entry.reason, this.workbench.kernel.env.clock.now()) })
+        attemptOf: () => 'setup', record })
       this.runner = new StageRunner({ ctx, workbench: this.workbench, maxWorkers: () => config.maxWorkers, workTools: WORK_TOOLS,
         name: actor => `@${this.username(actor) ?? actor.id}`,
         prepareWorkspace: jobId => this.prepareWorkspace(jobId), stopWork: (sessionId, reason) => stopBackground(ctx, sessionId, reason),
@@ -241,11 +237,6 @@ export class WorkbenchRuntime extends Service implements SourceHost {
 
   get lifetime(): AbortSignal { return this.stopped.signal }
 
-  /** What Sources and host commands see of the deployment. */
-  get deployment(): Deployment {
-    return { stateDir: this.config.stateDir }
-  }
-
   /** The policy: the profile's, plus the environment's senders and the identities resolved at startup. */
   policy(): Policy {
     const { policy } = this.config
@@ -271,7 +262,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     return [...new Set(ids.flatMap(id => this.userIds.has(id.toLowerCase()) ? [id, this.userIds.get(id.toLowerCase())!] : [id]))]
   }
 
-  /** The repositories intake chooses from: each one's Mattermost `senders` resolved to ids, as the global senders are (`D10`, 2026-11-12). */
+  /** The repositories intake chooses from: each one's Mattermost `senders` resolved to ids, as the global senders are (`D10`). */
   intakeRepositories(): RepositoryProfile[] {
     return this.config.repositories.map(profile => profile.senders?.mattermost
       ? { ...profile, senders: { ...profile.senders, mattermost: this.withUserIds(profile.senders.mattermost) } } : profile)
@@ -354,12 +345,11 @@ export class WorkbenchRuntime extends Service implements SourceHost {
       },
       receive: (trigger): ReceiveResult => this.workbench.receive(inboxInput(trigger)).duplicate ? 'duplicate' : 'stored',
       state: {
-        get: name => { const row = db.get<{ value: string }>('SELECT value FROM kv WHERE key = ?', key(name)); return row && JSON.parse(row.value) },
+        get: name => this.stored(key(name)) as never,
         set: (name, value) => {
           if (value === undefined) db.run('DELETE FROM kv WHERE key = ?', key(name))
-          else db.run('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key(name), JSON.stringify(value))
+          else this.store(key(name), value)
         },
-        keys: family => db.all<{ key: string }>('SELECT key FROM kv WHERE key LIKE ?', `${key(family.prefix)}%`).map(row => row.key.slice(key('').length) as never),
       },
       threads: {
         // GitLab watches the merge requests bound to jobs still in play (a completed job takes review feedback).
@@ -413,7 +403,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
       const staging = `${directory}.clone`
       await rm(staging, { recursive: true, force: true })
       const { head } = await createGitTransport({ baseUrl: gitlab.baseUrl, token: gitlab.token }).clone({ project, directory: staging })
-      this.workbench.kernel.db.run('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', baseKey(jobId), JSON.stringify(head))
+      this.store(baseKey(jobId), head)
       await excludeJobHome(staging)
       await rename(staging, directory)
     } else await mkdir(directory, { recursive: true })
@@ -422,8 +412,17 @@ export class WorkbenchRuntime extends Service implements SourceHost {
 
   /** The commit the job's worktree was cloned at (`T10.1`). */
   base(jobId: string): string | undefined {
-    const row = this.workbench.kernel.db.get<{ value: string }>('SELECT value FROM kv WHERE key = ?', baseKey(jobId))
-    return row ? JSON.parse(row.value) as string : undefined
+    return this.stored(baseKey(jobId)) as string | undefined
+  }
+
+  /** A value in the kernel's `kv` table. */
+  private stored(key: string): unknown {
+    const row = this.workbench.kernel.db.get<{ value: string }>('SELECT value FROM kv WHERE key = ?', key)
+    return row ? JSON.parse(row.value) as unknown : undefined
+  }
+
+  private store(key: string, value: unknown): void {
+    this.workbench.kernel.db.run('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, JSON.stringify(value))
   }
 
   /** The diff of the job's work against its base, computed outside the worktree (`work-diff.ts`). */
@@ -433,7 +432,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     return await workDiff({ worktree: this.worktree(jobId), base, ...commit ? { commit } : {}, ...await this.uploadPackFor(this.worktree(jobId)) })
   }
 
-  /** The confined upload-pack for a fetch from a job's worktree (`<workRoot>/<jobId>`), as `{ uploadPack }` (final review). */
+  /** The confined upload-pack for a fetch from a job's worktree (`<workRoot>/<jobId>`), as `{ uploadPack }`. */
   private async uploadPackFor(worktree: string): Promise<{ uploadPack?: { command: string; env: Record<string, string> } }> {
     const jobId = basename(worktree)
     if (dirname(resolve(worktree)) !== resolve(this.config.workRoot)) throw new Error(`${worktree} is not a job's worktree`)
@@ -469,7 +468,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     const locale = this.jobLanguage(jobId)
     const words = answerText(locale)
     const parts: string[] = [`${words.request}: ${cap(state.intake?.text ?? '', 2000)}`]
-    const ticket = state.bindings.map(binding => /^jira:(.+)$/u.exec(binding.threadKey)?.[1]).find(key => key !== undefined)
+    const ticket = ticketOf(state)
     const { jira } = this.connectors()
     if (ticket && jira) {
       try {
@@ -497,7 +496,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
   private async addressee(jobId: string): Promise<string | undefined> {
     const state = this.workbench.kernel.engine.job(jobId)?.state
     if (!state) return undefined
-    const ticket = state.bindings.map(binding => /^jira:(.+)$/u.exec(binding.threadKey)?.[1]).find(key => key !== undefined)
+    const ticket = ticketOf(state)
     const { jira, mattermost } = this.connectors()
     if (ticket && jira && mattermost) {
       try {
@@ -524,7 +523,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     // A link in a post is for people: the address they open Jira at (`dashboard.links`), else the connector's (`D13`).
     const jiraBase = this.links().jira
     const job = this.workbench.kernel.engine.job(jobId)?.state
-    // A Jira mention is markup only in Jira; elsewhere a person is named `@name`.
+    // A Jira mention (`[~name]`) is markup only in Jira; elsewhere a person is named `@name`.
     const mention = (name: string) => source === 'jira' ? `[~${name}]` : `@${name}`
     return {
       locale: this.config.locale as Locale,
@@ -532,9 +531,12 @@ export class WorkbenchRuntime extends Service implements SourceHost {
       ticketUrl: (issueKey: string) => jiraBase ? `${jiraBase}/browse/${encodeURIComponent(issueKey)}` : undefined,
       stageTitle: (stageId: string) => { try { return pinned ? stageTitleIn(stageOf(pinned, stageId), this.config.locale) : stageId } catch { return stageId } },
       artifactText: (digest: string) => this.workbench.kernel.blobs.text(digest),
-      // A Jira mention (`[~name]`) is markup only in Jira; elsewhere a Jira user is shown by name.
-      name: (actor: Actor) => { const username = this.username(actor); return username ? `@${username}` : actor.source !== 'jira' ? `@${actor.id}` : source === 'jira' ? `[~${actor.id}]` : actor.id },
-      maxChars: source === 'mattermost' ? IM_MAX_CHARS : source === 'jira' ? JIRA_MAX_CHARS : GITLAB_MAX_CHARS,
+      // A Jira user is mentioned only in Jira, and shown by name elsewhere.
+      name: (actor: Actor) => {
+        const username = this.username(actor)
+        return username ? `@${username}` : actor.source !== 'jira' ? `@${actor.id}` : source === 'jira' ? `[~${actor.id}]` : actor.id
+      },
+      maxChars: maxCharsFor(source),
       reportOutput: (attemptId: string) => {
         const event = this.workbench.kernel.engine.events(jobId).find(candidate => candidate.type === 'AttemptReported' && candidate.attemptId === attemptId)
         return event?.type === 'AttemptReported' && event.report.outcome === 'completed' ? event.report.output : undefined
@@ -667,7 +669,7 @@ export class WorkbenchRuntime extends Service implements SourceHost {
 
   /** The effective settings and where each comes from (`D9`), for the panel. */
   settings(): SettingsView {
-    const { profile, policy } = this.config
+    const { profile } = this.config
     return {
       models: { default: profile.defaultModel, ...profile.defaultEffort ? { effort: profile.defaultEffort } : {}, verdict: profile.verdictModel,
         from: 'profile `models`, else LITELLM_MODEL' },
@@ -733,11 +735,6 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     return { ...jira ? { jira } : {}, ...mattermost ? { mattermost } : {}, ...gitlab ? { gitlab } : {} }
   }
 
-  /**
-   * Who decides a job's approval and resume gates, as `eligible()` rules: its repository's approvers when the repository lists any;
-   * else the requester (while an allowed sender), the workflow's approvers, and `*` where any allowed sender may. Mattermost ids are
-   * shown by name.
-   */
   /** The people `deciders()` names, each with the source the name belongs to (`*` left out). */
   private approverPeople(workflowId: string, repository: string | null, requester: Actor): { source: string; name: string }[] {
     const policy = this.policy()
@@ -750,6 +747,11 @@ export class WorkbenchRuntime extends Service implements SourceHost {
     return [...!anyone && eligible(policy, requester, 'sender') ? [person(requester.source, requester.id)] : [], ...pick(workflow)]
   }
 
+  /**
+   * Who decides a job's approval and resume gates, as `eligible()` rules: its repository's approvers when the repository lists any;
+   * else the requester (while an allowed sender), the workflow's approvers, and `*` where any allowed sender may. Mattermost ids are
+   * shown by name.
+   */
   private deciders(workflowId: string, repository: string | null, requester: Actor): string[] {
     const policy = this.policy()
     // A resolved Mattermost id becomes its name (and merges with it); an id with no name yet is shown as it is, never dropped.
@@ -852,11 +854,15 @@ export class WorkbenchRuntime extends Service implements SourceHost {
 
 /**
  * A new job's parameters (`T11.1`): its repository's (`{{repository}}`, `{{testCommand}}`, `ci`, …), then the workflow's own
- * (standard-delivery's Jira status names, or a module's parameters), which are kept over the repository's (review).
+ * (standard-delivery's Jira status names, or a module's parameters), which are kept over the repository's.
  */
 export function jobParameters(own: Readonly<Record<string, string>>, repository: RepositoryProfile | undefined): Record<string, string> {
   return { ...repository ? repositoryParameters(repository) : {}, ...own }
 }
+
+/** The key of the Jira ticket a job is bound to, if any. */
+const ticketOf = (state: JobState): string | undefined =>
+  state.bindings.map(binding => /^jira:(.+)$/u.exec(binding.threadKey)?.[1]).find(key => key !== undefined)
 
 /** What a job's proxy connection is recorded against: its running attempt, or `setup` while the setup step runs (`T11.4`). */
 export function connectionLabel(state: JobState | undefined): string | undefined {

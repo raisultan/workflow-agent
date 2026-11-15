@@ -73,7 +73,7 @@ describe('places (D12)', () => {
 
   it('posts the outcome and a blocked job\'s resume gate on the chat thread', async () => {
     h = harness()
-    const job = await toApproval()
+    await toApproval()
     await h.say(JIRA_LEAD, 'ok', { thread: TICKET })
     await h.say(LEAD, 'stop')
     expect(postsOf('cancelled')).toEqual([THREAD])

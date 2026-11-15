@@ -1,6 +1,6 @@
 # Upstream Adaptation and Module Map
 
-Status: **Imported and adapted** (V1, `G1`–`G5`); the prototype's work model was replaced by the owned workflow domain in `P9` (`D8`).
+Workflow Agent consumes DeepSeek Harness as its runtime and adapts `dsh-superagent-prototype` as its application base. The prototype's work model was replaced by Workflow Agent's own workflow domain ([`D8`](DECISIONS.md#d8-owned-workflow-domain-on-dsh)); its integration layer was kept and adapted. This document lists the pinned revisions, the DSH seams in use, and what became of each prototype module.
 
 ## 1. Pinned Upstream Revisions
 
@@ -12,16 +12,16 @@ Status: **Imported and adapted** (V1, `G1`–`G5`); the prototype's work model w
 ## 2. DeepSeek Harness (`deepseek-harness`) Seams Used
 
 - **Cordis composition and presets (`@deepseek-ai/cordis`, `@deepseek-ai/dsh-agent-preset`, `@deepseek-ai/dsh-permission-presets`):** [`cordis.patch.yml`](../cordis.patch.yml) declares the 4 stage agent presets (`workflow-agent-inspector`, `-planner`, `-implementer`, `-reviewer`) with isolated `shell`, `compaction` and `toolResultPruner` realms, and the 2 permission presets (`workflow-agent-readonly`, `workflow-agent-worker`). A job's run manifest names the presets per stage.
-- **Sessions (`@deepseek-ai/dsh-api-session-controller`, `dsh-session`, `dsh-agent`, `dsh-workspace`):** the stage runner creates one session per attempt with `ctx.sessionController`, sets its model with `agent.model.select()`, prompts it, steers follow-ups into it (`src/app/delivery.ts`), reads its events through `ctx.sessionPersistence`, and retires it with `workspaceRegistry.archiveSession`. Background shell jobs (`ctx.jobs`) are stopped when an attempt ends, and so are subagents if any were started (`src/executor/background.ts`); since `P10` no stage preset offers the `subagent` tool.
+- **Sessions (`@deepseek-ai/dsh-api-session-controller`, `dsh-session`, `dsh-agent`, `dsh-workspace`):** the stage runner creates one session per attempt with `ctx.sessionController`, sets its model with `agent.model.select()`, prompts it, steers follow-ups into it (`src/app/delivery.ts`), reads its events through `ctx.sessionPersistence`, and retires it with `workspaceRegistry.archiveSession`. Background shell jobs (`ctx.jobs`) are stopped when an attempt ends, and so are subagents if any were started (`src/executor/background.ts`); no stage preset offers the `subagent` tool.
 - **Tool runtime (`@deepseek-ai/dsh-tools`):** the read tools, the safe-output tools and `workbench_stage_report` are registered on the attempt's session. `toDshParameterSchema()` (`src/tools/shared.ts`) converts their `zod` schemas into the JSON Schema subset DSH validates and renders.
 - **LLM runtime (`@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-llm-pi-ai`):** sessions use the `litellm` route configured in `cordis.patch.yml` (`api: 'openai-completions'`, `baseURL`, `apiKeyEnv: 'LITELLM_API_KEY'`). The reply verdict calls `ctx.llm.prepareCall` directly, with its own declared request purpose (`workbench-reply-verdict`).
 - **Sandboxing (`@deepseek-ai/dsh-sandbox-local`, `dsh-fs-sandbox`, `dsh-bash-sandbox`, `dsh-shell-env`):** Seatbelt (macOS) and `bwrap`/Landlock (Linux) confine each session by its permission preset. In the container, the workbench's wrapper is `dsh-sandbox-local`'s `runnerCommand` (`src/sandbox/`), and the workbench registers `DSH_WORKBENCH_JOB` in `ctx.shellEnv` so the wrapper knows each shell's job ([DESIGN §5](DESIGN.md#5-stage-presets-and-sandboxes)). Host-run checks use the same service (`ctx.sandbox.confine`, `workspace-write`). A path guard (`ctx.tools.guard`) on each stage session confines DSH's file tools, which run outside the sandbox.
-- **Web host:** not used by the workbench since `D13`. The dashboard and its read-only API are served by the workbench's own server on their own port; DSH's web app (its own UI) runs as upstream ships it, published only with the Compose profile `dsh-ui`.
+- **Web host:** not used by the workbench (`D13`). The dashboard and its read-only API are served by the workbench's own server on their own port; DSH's web app (its own UI) runs as upstream ships it, published only with the Compose profile `dsh-ui`.
 - **Session persistence (`@deepseek-ai/dsh-session-persistence`):** the dashboard reads an attempt's session log through a read handle (`open(id, 'read')`) for its agent trace (`D13`).
 
 ## 3. Module Disposition (`dsh-superagent-prototype` → Workflow Agent)
 
-| Upstream path | Upstream role | Workflow Agent (V2) |
+| Upstream path | Upstream role | Workflow Agent |
 | --- | --- | --- |
 | `src/core/engine.ts` and the `src/core/` work model around it | Single-assignment `Ticket` state machine, driven by an always-on LLM `orchestrator` session. | **Replaced (`D3`, `D8`).** The kernel (`src/kernel/`: inbox, engine, effects, timers, projections, registry) and the domain (`src/domain/`: definitions, policy, router, job decider, vocabulary). No orchestrator session exists; routing and transitions are deterministic. |
 | `src/app/store.ts`, `effects.ts`, `outbox.ts`, `versions.ts` | `node:sqlite` store with savepoints, an `Effects` queue and a per-conversation `Outbox`. | **Replaced (`D8`).** One kernel database (`workbench.sqlite`) where every change to a job is one transaction; effects with idempotency keys, ordering keys and reconciliation replace the outbox and action receipts. |
@@ -32,11 +32,11 @@ Status: **Imported and adapted** (V1, `G1`–`G5`); the prototype's work model w
 | Worker shell CLIs (`gh`, `lark-cli`) | Credentialed CLI calls from the worker. | **Replaced (`D8` decision 6).** Read tools (`src/adapters/read-tools.ts`) and safe-output write tools (`src/adapters/safe-output.ts`); no credential reaches a session. |
 | `src/infra/text.ts`, `src/client/i18n.ts` | `IM_WORDS = 100` (`Intl.Segmenter('zh')`) and `{ zh, en }` localization. | **Replaced (`D6`).** Connector-sized character limits, `ru`/`en` messages (`src/adapters/messages.ts`), Cyrillic detection and Cyrillic-to-ASCII slugs; the dashboard speaks `ru` and `en`. |
 | `src/infra/environment.ts`, `commands.ts`, `src/app/state-lock.ts` | Worker environment, host commands and the state lock. | **Adapted (`D2`).** Credential scrubbing, per-job `HOME` and git config, and confined host commands for checks. |
-| `src/app/http.ts`, `src/app/views/*`, `src/client/*` | Loopback web panel with 11 `GET` routes and 12 mutation routes. | **Rewritten, read-only (`F7`, `D7`, `D9`).** `src/app/panel-api.ts` (5 `GET` routes, `405` for everything else, secret redaction) over V2 state and projections; `src/client/` pages for jobs, job detail, inbox, health and effective settings; since `D13` served on the workbench's own port, not as a DSH client page. |
+| `src/app/http.ts`, `src/app/views/*`, `src/client/*` | Loopback web panel with 11 `GET` routes and 12 mutation routes. | **Rewritten, read-only (`F7`, `D7`, `D9`).** `src/app/panel-api.ts` (5 `GET` routes, `405` for everything else, secret redaction) over the kernel's state and projections; `src/client/` pages for jobs, job detail, inbox, health and effective settings, served on the workbench's own port, not as a DSH client page (`D13`). |
 
-## 4. Adapted Ideas (`P16`)
+## 4. Adapted Ideas
 
-Ideas and some wording adapted, no file copied; both sources are MIT-licensed, and their notices are in [`NOTICE`](../NOTICE), with the licence texts in [`third_party/`](../third_party).
+Ideas and some wording adapted for the review check and the merge-risk summary ([`D8` amendment](DECISIONS.md#amendment-review-severity-evidence-and-merge-risk-2026-11-14)), no file copied; both sources are MIT-licensed, and their notices are in [`NOTICE`](../NOTICE), with the licence texts in [`third_party/`](../third_party).
 
 | Source | Pinned commit | What was taken | Where | Not taken |
 | --- | --- | --- | --- | --- |

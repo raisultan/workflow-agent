@@ -16,7 +16,7 @@ import { threadKey } from './threads.ts'
 /** The marker the workbench's own GitLab notes end with, on a line of its own (a quote of one starts with `>`). */
 const OWN_NOTE = /(?:^|\n)<!-- workbench:[^\n]* -->\s*$/u
 
-/** The V2 thread key of a Source's thread id. */
+/** The domain's thread key of a Source's thread id. */
 export function inboundThread(source: string, id: string): string | undefined {
   if (source === 'mattermost') {
     const [channelId, rootId] = id.split(':')

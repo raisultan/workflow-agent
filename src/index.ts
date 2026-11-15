@@ -1,4 +1,4 @@
-/** Main plugin entry: mounts the Workflow Agent runtime (V2) and stops it with the plugin. */
+/** Main plugin entry: mounts the Workflow Agent runtime and stops it with the plugin. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-settings'
 import { dashboardEnv } from './app/dashboard-server.ts'

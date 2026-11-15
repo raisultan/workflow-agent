@@ -5,7 +5,7 @@
  * with host credentials (`T9.2`). A result within the wait returns to the model; after it, the tool answers `queued`, and the
  * result reaches the session as a notice.
  *
- * Scope (kept from V1): Jira writes go to the job's own issue; GitLab writes go to the job's repository, on agent branches no other
+ * Scope: Jira writes go to the job's own issue; GitLab writes go to the job's repository, on agent branches no other
  * job uses, and to merge requests bound to the job; Mattermost posts go to threads bound to the job, their channels, or channels
  * the job created.
  */

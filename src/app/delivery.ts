@@ -29,8 +29,9 @@ function deliveryId(message: UserMessage): string | undefined {
 
 /**
  * Delivers messages to DSH agents at most once per request ID across active and restored Sessions.
- * Tracks delivered message IDs from live Session events, persisted history, and pending inboxes so retries from `Sessions` do not duplicate messages,
- * and marks delivered messages with `workflow-agent`'s own source (`workflow-agent`) rather than user RPCs so they are never mistaken for messages written by a person.
+ * Tracks delivered message IDs from live Session events, persisted history, and pending inboxes, so a retried delivery does not
+ * duplicate a message, and marks delivered messages with the plugin's own source (`workflow-agent`), so they are never mistaken
+ * for messages written by a person.
  */
 export class AgentDelivery {
   private readonly seen = new WeakMap<Session, Seen>()
@@ -68,18 +69,17 @@ export class AgentDelivery {
     await state.loaded
     return state
   }
+  /** Whether the message delivered under `requestId` is in the agent's history or still in its inbox. */
   async holds(agent: Agent, requestId: string): Promise<boolean> {
     const id = messageId(requestId)
     return (await this.history(agent)).ids.has(id) || [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => deliveryId(message) === id)
   }
-  /** Delivers once to the selected inbox, or injects into history without waking the agent, and flushes Session persistence before acknowledging the producer. */
-  async send(agent: Agent, requestId: string, text: string, mode: 'queue' | 'steer' | { inject: string }, signal: AbortSignal, authorize?: () => void,
-    accepted?: () => void): Promise<void> {
+  /** Delivers once to the selected inbox, or injects into history without waking the agent, and flushes Session persistence before returning. */
+  async send(agent: Agent, requestId: string, text: string, mode: 'queue' | 'steer' | { inject: string }, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted()
     const seen = await this.history(agent)
     signal.throwIfAborted()
     if (this.ctx.agents.get(agent.id) !== agent) throw new Error('Delivery target was disposed')
-    authorize?.()
     const id = messageId(requestId)
     const pending = [...agent.inbox.nextTurn, ...agent.inbox.nextStep].some(message => deliveryId(message) === id)
     if (!seen.ids.has(id) && !pending) {
@@ -90,7 +90,6 @@ export class AgentDelivery {
       else if (mode === 'steer') agent.steer(message)
       else agent.followup(message)
     }
-    accepted?.()
     await this.ctx.sessionPersistence.flush()
   }
 }

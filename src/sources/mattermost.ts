@@ -7,11 +7,13 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
-import type { Trigger } from './types.ts'
-import { IM_MAX_CHARS, asciiSlug, checkedConnectorText } from '../infra/text.ts'
+import { IM_MAX_CHARS, asciiSlug, checkedConnectorText, escapeRegExp } from '../infra/text.ts'
+import { KV } from '../kv.ts'
 import { ConnectorHttpError, fetchWithRetry } from './http-client.ts'
 import { health, sourceContext } from './host.ts'
 import type { SourceKind } from './kind.ts'
+import { pause } from './poll.ts'
+import type { Trigger } from './types.ts'
 
 /** Configuration for the Mattermost connector (`F2`, `D5`). */
 export interface MattermostConfig {
@@ -54,10 +56,6 @@ export interface MattermostPost {
   message: string
   type?: string
   props?: Record<string, unknown>
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
@@ -268,7 +266,7 @@ export class MattermostConnector {
 
 
   /**
-   * Creates a post carrying `props`; V2 writers put their idempotency key there, so a post whose outcome is unknown can be found
+   * Creates a post carrying `props`; the writers put their idempotency key there, so a post whose outcome is unknown can be found
    * again (`T9.2`). Returns the server's id and creation time.
    */
   async createPost(input: { channelId: string; rootId?: string; message: string; props?: Record<string, unknown> }): Promise<{ id: string; createAt: number }> {
@@ -412,9 +410,6 @@ export const mattermostKind: SourceKind<MattermostSourceConfig> = {
   schema: MattermostSourceConfigSchema,
   health: ['mattermost'],
 }
-
-import { KV } from '../kv.ts'
-import { pause } from './poll.ts'
 
 /**
  * Executes one Mattermost poll batch, saving cursor progress incrementally per delivered trigger so an abort mid-batch

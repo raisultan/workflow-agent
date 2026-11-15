@@ -1,16 +1,17 @@
 /**
- * `standard-delivery@13` (`T9.7`, `T10.1`, `T11.1`, `T12.6`, `T14.1`, trial 2026-11-14, `T16.7`, 2026-11-15): inspect → plan (approved by a person, with what will be tested and any
- * exemption from the test-integrity rules) → implement (the tests, CI, the test-integrity check and a clean-context review must pass)
- * → completed with a merge request open; review feedback on that merge request reopens the job at `review`. Everything workplace-specific is a
- * parameter frozen in each job's manifest: the chosen repository's (`{{repository}}`, `{{targetBranch}}`, `{{testCommand}}`, and
- * `ci`, which leaves the CI check out for a repository with none) and the deployment's Jira status names, so the definition is
- * the same in every deployment. Stage instructions are English, each with a Russian variant (`.ru`, `D14`). Each conversation has its place (`D12`):
- * questions and a blocked job's resume in the job's chat thread, the plan's approval in its Jira ticket, code on its merge request.
- * Since `@9` implement and review audit their own diff before they commit (it serves the plan, the tests reach the boundaries
- * the plan names, the other users of a changed shared name still work) and write the merge request's description in a fixed shape;
- * the stages follow the target repository's own conventions when it states them. Since `@10` what they write to people is laid out
- * as the host's own posts are (`STYLE`); since `@11` a merge of the job's merge request closes it (`completeOn`), and since `@12` so does closing it without a merge; `@13` takes the stage presets' new names (`workflow-agent-*`, `D14`). The prompts are text: the host
- * checks none of what they ask.
+ * `standard-delivery` (`T9.7`): inspect → plan (approved by a person, with what will be tested and any exemption from the
+ * test-integrity rules) → implement (the tests, CI, the test-integrity check and a clean-context review must pass) → completed with
+ * a merge request open; review feedback on that merge request reopens the job at `review`, and merging or closing it closes the job
+ * (`completeOn`). Everything workplace-specific is a parameter frozen in each job's manifest: the chosen repository's
+ * (`{{repository}}`, `{{targetBranch}}`, `{{testCommand}}`, and `ci`, which leaves the CI check out for a repository with none) and
+ * the deployment's Jira status names, so the definition is the same in every deployment. Stage instructions are English, each with
+ * a Russian variant (`.ru`, `D14`). Each conversation has its place (`D12`): questions and a blocked job's resume in the job's chat
+ * thread, the plan's approval in its Jira ticket, code on its merge request.
+ *
+ * Implement and review audit their own diff before they commit (it serves the plan, the tests reach the boundaries the plan names,
+ * the other users of a changed shared name still work) and write the merge request's description in a fixed shape; the stages
+ * follow the target repository's own conventions when it states them, and what they write to people is laid out as the host's own
+ * posts are (`STYLE`). The prompts are text: the host checks none of what they ask.
  */
 import type { WorkflowSpec } from '../domain/definition.ts'
 
@@ -22,8 +23,8 @@ const strings = { type: 'array', items: { type: 'string' } }
 export const STANDARD_DELIVERY_PARAMETERS = ['repository', 'targetBranch', 'testCommand', 'ci', 'jira.inProgress', 'jira.inReview'] as const
 
 /**
- * How everything the agents write to people reads (`D12`), in Russian: short and structured. Since `@10` laid out as the host's own posts
- * are (`messages.ts`, 2026-11-15): a headline with an emoji, the facts on lines of their own, blank lines between blocks (GitLab joins
+ * How everything the agents write to people reads (`D12`), in Russian: short and structured, and laid out as the host's own posts
+ * are (`messages.ts`): a headline with an emoji, the facts on lines of their own, blank lines between blocks (GitLab joins
  * lines a single newline separates), and a `👉` line when the reader has to do something.
  */
 const STYLE_RU = 'Как писать людям (вопросы, комментарии в Jira, ответы в MR): по-русски, коротко и по делу — сначала то, что нужно от читателя; '
@@ -65,8 +66,8 @@ const CONVENTIONS_RU = 'Соглашения репозитория: если в
   + '(структура, стиль, тесты, сообщения коммитов); где они расходятся с твоими привычками — правы они.'
 
 /**
- * The self-audit before a commit (`T16.7`), its three checks taken from what the owner's trial missed: a shared constant changed for
- * one route, a test of a default that never reached it, and a planned test that was not written.
+ * The self-audit before a commit (`T16.7`). Its three checks each catch a mistake a review tends to miss: a shared constant changed
+ * for one route, a test of a default that never reached it, and a planned test that was not written.
  */
 const selfAuditRu = (step: number, before: string, note = '') => [
   `${step}. «Самопроверка» — ${before}, все три пункта:${note}`,
@@ -385,8 +386,8 @@ export function standardDelivery(): WorkflowSpec {
       gates: [{ id: 'plan-approval', kind: 'approval', reminderMs: 24 * 3_600_000, deadlineMs: 7 * 24 * 3_600_000 }],
       budgets: { turns: 1500, tokens: 40_000_000, backtracks: 4, extension: { turns: 500, tokens: 10_000_000, attempts: 2, backtracks: 2 } },
       reopen: { stage: 'review', requirements: 'plan' },
-      // A merge closes the job (`D12`): it takes no more feedback, and its open proposals end. Missing before `@11` (trial, 2026-11-15);
-      // a merge request closed without a merge closes it too since `@12`.
+      // A merge closes the job (`D12`): it takes no more feedback, and its open proposals end. A merge request closed without a
+      // merge closes it too.
       completeOn: ['mr_merged', 'mr_closed'],
       repository: true,
       places: { clarification: 'chat', plan: 'ticket', code: 'mergeRequest' },

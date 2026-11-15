@@ -50,7 +50,7 @@ function Navigation() {
   const nav = VIEWS.filter(view => view.nav)
   return <>
     <nav className="side" aria-label={t('appName')}>
-      <div className="ws"><span className="logo">AW</span><div className="wsn"><div className="ws-name">{t('appName')}</div><div className="ws-sub">{t('readOnly')}</div></div></div>
+      <div className="ws"><span className="logo">WA</span><div className="wsn"><div className="ws-name">{t('appName')}</div><div className="ws-sub">{t('readOnly')}</div></div></div>
       {nav.map(view => <Link key={view.id} to={view.path} className="nv" aria-current={active === view.id && !(view.id === 'jobs' && repo) ? 'page' : undefined}>
         <Icon name={view.nav!.icon} /><span>{t(view.nav!.label)}</span>
         {view.id === 'jobs' && waiting ? <span className="ct w">{waiting}</span> : null}

@@ -11,7 +11,7 @@
 import { z } from 'zod'
 import type { ActionPayload, NoticePayload, PostPayload } from '../domain/job.ts'
 import type { EffectHandler, EffectResult } from '../kernel/effects.ts'
-import { GITLAB_MAX_CHARS, IM_MAX_CHARS, JIRA_MAX_CHARS } from '../infra/text.ts'
+import { maxCharsFor } from '../infra/text.ts'
 import { ConnectorHttpError } from '../sources/http-client.ts'
 import type { GitLabConnector } from '../sources/gitlab.ts'
 import type { JiraConnector } from '../sources/jira.ts'
@@ -92,7 +92,7 @@ async function postText(connectors: Connectors, thread: Thread, text: string, ke
       return { postId: comment.id, postedAt: comment.created, threadKey: threadKey(thread) }
     }
     case 'gitlab': {
-      // In the discussion it answers, when it answers one (trial 2026-11-14); else, or when GitLab refuses the discussion, a new note.
+      // In the discussion it answers, when it answers one; else, or when GitLab refuses the discussion, a new note.
       const gitlab = need(connectors.gitlab, 'GitLab')
       const body = `${text}\n\n${gitlabMarker(key)}`
       const note = await (replyTo ? gitlab.createNote({ project: thread.project, mrIid: thread.mrIid, body, discussionId: replyTo }).catch((error: unknown) => {
@@ -126,7 +126,7 @@ async function findText(connectors: Connectors, thread: Thread, text: string, ke
 /**
  * The handler of the domain's `post` effect: renders the message and posts it to its thread. Its result keeps the text as posted
  * (`text`, before a source's own conversion such as Jira markup), so what people saw stays readable when the wording or the job's
- * context (its last commit, say) changes later (2026-11-15). A post found again after an unknown outcome keeps the text rendered when
+ * context (its last commit, say) changes later. A post found again after an unknown outcome keeps the text rendered when
  * it was found, which Jira's exact-body match makes the same and which a Mattermost or GitLab post's key does not check.
  */
 export function postHandler(deps: WriterDeps): EffectHandler<PostPayload> {
@@ -154,7 +154,7 @@ export function postHandler(deps: WriterDeps): EffectHandler<PostPayload> {
 
 /** The handler of the job-less `notice` effect (`T11.1`): a reply to a trigger that started no job, posted once per event. */
 export function noticeHandler(deps: { connectors(): Connectors; locale: Locale; limit?: number; bot?(): string | undefined }): EffectHandler<NoticePayload> {
-  const text = (payload: NoticePayload, thread: Thread) => renderNotice(payload.notice, deps.locale, maxCharsOf(thread), deps.bot?.())
+  const text = (payload: NoticePayload, thread: Thread) => renderNotice(payload.notice, deps.locale, maxCharsFor(thread.source), deps.bot?.())
   return {
     idempotent: false,
     limit: () => deps.limit ?? 2,
@@ -166,8 +166,6 @@ export function noticeHandler(deps: { connectors(): Connectors; locale: Locale; 
     },
   }
 }
-
-const maxCharsOf = (thread: Thread) => thread.source === 'mattermost' ? IM_MAX_CHARS : thread.source === 'jira' ? JIRA_MAX_CHARS : GITLAB_MAX_CHARS
 
 const Text = z.string().min(1)
 /** The safe-output actions and their requests; a stage's `tools` names the ones it may use. */
@@ -250,7 +248,7 @@ export function actionHandler(deps: WriterDeps): EffectHandler<ActionPayload> {
         return need(connectors.gitlab, 'GitLab').editMergeRequest(request)
       }
       case 'gitlab.reply': {
-        // The agent's reply, with its lines kept: GitLab would join lines a single newline separates (2026-11-15).
+        // The agent's reply, with its lines kept: GitLab would join lines a single newline separates.
         const request: ActionRequest<'gitlab.reply'> = parse(payload)
         const note = await need(connectors.gitlab, 'GitLab').createNote({ project: request.project, mrIid: request.mrIid,
           body: `${hardBreaks(request.body)}\n\n${gitlabMarker(key)}`, ...request.discussionId ? { discussionId: request.discussionId } : {} })

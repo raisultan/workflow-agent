@@ -1,5 +1,5 @@
 /**
- * Checks that let a stage finish (`T9.13`, moved from `T10.1`): the handler of the domain's `check` effect. A stage's report is a
+ * Checks that let a stage finish (`T9.13`): the handler of the domain's `check` effect. A stage's report is a
  * proposal; its job moves on only when its required checks pass, as the host runs them:
  *
  * - `command`: the stage's check command, run by the host in the job's worktree, confined by the sandbox the composition gives it
@@ -66,8 +66,6 @@ const ENDED = new Set(['success', 'failed', 'canceled', 'skipped'])
 const TAIL = 3000
 /** Failed CI jobs whose log tails go into the evidence. */
 const CI_JOBS = 3
-
-export { redactCredentials } from '../infra/redact.ts'
 
 /** The commit the job pushed last, from its settled push writes. */
 export function lastPushedSha(workbench: Pick<Workbench, 'kernel'>, jobId: string): string | undefined {
@@ -147,7 +145,7 @@ export function checkHandler(deps: CheckDeps): EffectHandler<CheckPayload> {
     // A test service that did not start is the environment, not the agent's work (`T12.5`): another attempt cannot fix it.
     const service = result.exitCode === 0 ? undefined : serviceFailure(output)
     // The command's own output carries this line, so an agent's code could print it too: that can only block the job for a person,
-    // never pass a check, and the evidence keeps the end of the log so that person sees what really happened (review).
+    // never pass a check, and the evidence keeps the end of the log so that person sees what really happened.
     if (service) {
       const share = Math.floor(TAIL / 2)
       const ending = output.length > share ? `…${output.slice(-share)}` : output
@@ -180,7 +178,7 @@ export function checkHandler(deps: CheckDeps): EffectHandler<CheckPayload> {
     // Pushing is the agent's work: with nothing pushed, the attempt is retried.
     const sha = lastPushedSha(deps.workbench, payload.jobId)
     if (!sha) return verdict('failed', 'no commit was pushed, so CI has nothing to run')
-    // The window is wall-clock time since the attempt's verification started (final review), not a count of polls.
+    // The window is wall-clock time since the attempt's verification started, not a count of polls.
     const pollMs = deps.ciPollMs ?? 30_000
     const waited = now() - verificationStart(payload, attempt)
     let pipeline: Awaited<ReturnType<GitLabConnector['latestPipeline']>>

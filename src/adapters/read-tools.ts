@@ -1,6 +1,6 @@
 /**
  * Connector read tools (`T9.8`): what a stage session reads from Jira, Mattermost and GitLab, with host credentials that never
- * reach the session. Every stage gets them; reading changes nothing. The names are V1's, so prompts keep working. GitLab reads stay
+ * reach the session. Every stage gets them; reading changes nothing. The names are stable, since prompts use them. GitLab reads stay
  * within the job's repository. Binding a Jira issue to a job is a write of its own (`jira_link_issue`), not a side effect of reading.
  */
 import { z } from 'zod'

@@ -45,7 +45,7 @@ export function Page({ crumbs, actions, title, children }: { crumbs: ReactNode; 
   const appName = t('appName')
   useEffect(() => { document.title = title ? `${title} · ${appName}` : appName }, [title, appName])
   return <>
-    <div className="mtop"><div className="ws"><span className="logo">AW</span><span className="ws-name">{t('appName')}</span></div><SwitchButtons /></div>
+    <div className="mtop"><div className="ws"><span className="logo">WA</span><span className="ws-name">{t('appName')}</span></div><SwitchButtons /></div>
     <div className="bar"><div className="crumbs">{crumbs}</div>{actions ? <div className="right">{actions}</div> : null}</div>
     <div className="content"><div className="wrap">
       {notAnswering(state) ? <div className="note k-bad" role="status"><Icon name="off" /><div><b>{t('down.title', { time: state.at ? hm(state.at) : '—' })}</b> {t('down.body')}</div></div> : null}

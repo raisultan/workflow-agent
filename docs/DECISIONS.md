@@ -1,27 +1,33 @@
 # Architectural Decisions (`D1`–`D14`)
 
-Status: `D1`–`D7` **Settled & Verified (`G1`–`G5`)**. `D8` **Accepted (2026-11-10), implemented in `P7`–`P10`** (`G10` met); `D9` **Accepted (2026-11-11), implemented in `P9`**; `D10` **Accepted (2026-11-12), implemented in `P11`** (`G11` met); `D11` **Accepted (2026-11-12), implemented in `P12`** (`G12` met); `D12` **Accepted (2026-11-13), implemented in `P14`**; `D13` **Accepted (2026-11-13), implemented in `P15`** (`G15` met); `D8`'s review amendment **Accepted (2026-11-14), implemented in `P16`** (`G16` met); `D14` **Accepted (2026-11-15)**, the open-source release; where it revises an earlier decision, the earlier text describes V1 as built. Fixed product rules live in [PRD §3](PRD.md#3-fixed-product-decisions) and detailed system mechanics in [DESIGN](DESIGN.md).
+This is the record of why Workflow Agent is built as it is. All fourteen decisions are accepted and implemented. Fixed product rules live in [PRD §3](PRD.md#3-fixed-product-decisions), and the system as it works today is described in [DESIGN](DESIGN.md).
 
-| ID | Area | Decision | Gate |
-| --- | --- | --- | --- |
-| **D1** | **Upstream version lock** (revised 2026-11-11, `P6`; signed off 2026-11-11) | Pin runtime to **`@deepseek-ai/dsh@0.2.2-rc.1`** (`@deepseek-ai/cordis@4.1.0`, `@deepseek-ai/schemastery@3.19.0`, Node.js `>=24.9.0`) with exact pins in `devDependencies`, `peerDependencies` and `engines.dsh`, paired with **`dsh-superagent-prototype` `8c32a9dc5`**, booting via the official `npx dsh --profile workflow-agent` CLI and [`cordis.patch.yml`](../cordis.patch.yml). | **G1 / G6** |
-| **D2** | **Per-job worker isolation & OS sandboxes** (extended by `D8`: network egress) | Enforce stage OS sandboxes via `@deepseek-ai/dsh-sandbox-local` + `@deepseek-ai/dsh-permission-presets`: pin `inspect` and `plan` to **`workflow-agent-readonly`** (`sandbox: read-only`, `approval: never`) and `implement` and `review` to **`workflow-agent-worker`** (`sandbox: workspace-write`, `approval: never`), with separate `state` and `work` volumes, environment credential scrubbing (`WORKER_FORBIDDEN_ENV_PATTERN`), `/proc/<pid>/environ` kernel denial across `bwrap` user namespaces, and host-brokered connector/Git writes ([DESIGN §5](DESIGN.md#5-stage-presets-and-sandboxes)). | **G2** |
-| **D3** | **Deterministic workflow engine, 4 stage presets & backtracking** (revised by `D8`) | Replace upstream's permanent LLM `orchestrator` middleman session with a **deterministic TypeScript coordinator** (`src/core/workflow.ts` (V1; removed in `P9`)). Spawn **one persistent DSH `Session` per stage** (`job-<jobId>-stage-<stageId>`) sharing **one Git worktree per `Job`**. Configure 4 declarative stage presets in [`cordis.patch.yml`](../cordis.patch.yml) (`workflow-agent-inspector`, `planner`, `implementer`, `reviewer`) backed by granular connector tool plugins (`lib/tool-{jira,mattermost,gitlab}.js`). Support re-entrant cross-stage backtracking (`plan → inspect`, `implement → plan \| inspect`, `review → plan \| inspect`), `workbench_stage_report`, `workbench_trigger_handback`, direct `steer` delivery, and unreported-turn auto-recovery ([DESIGN §3](DESIGN.md#3-domain-srcdomain)). | **G3** |
-| **D4** | **Hash-bound approvals & RU/EN reply classification** (revised by `D8`) | Verify `trigger.actor` (`{ source, id }`) deterministically against the gate's per-source `approvers` allowlist and bind approvals to the exact `artifact_revision` (`sha256` digest) for `stage.artifactKind`. Standalone short Russian/English approvals approve on a zero-LLM fast path; multi-clause replies (`"Ок, но..."`) run a stateless single-turn classifier (`changes_requested` → re-enter `plan` for revision `r + 1`, invalidating revision `r`). | **G3** |
-| **D5** | **Outbound-polling connectors** | Implement `jira`, `mattermost`, and `gitlab` connectors using **outbound cursor-based HTTP polling** (`KV`, plus optional outbound Mattermost WebSocket) so zero inbound webhook ports are required behind NAT or on local Docker Compose. Separate deterministic contract tests from recorded live smoke tests. | **G4** |
-| **D6** | **Russian (`ru`) & English (`en`) text handling** | Replace upstream's 100-word Chinese segmenter limit (`Intl.Segmenter('zh')`) with connector-appropriate character limits (`8,000`–`16,000` chars), replace `{ zh, en }` wrappers with `ru`/`en` localization and `\p{Script=Cyrillic}` support, and transliterate Cyrillic issue titles into ASCII-only Git branch/worktree slugs (`agent/<issue-key>-<ascii-slug>`). | **G1 / G3** |
-| **D7** | **Loopback read-only supervision & deep connector context** | Bind the supervision HTTP server to `127.0.0.1` and reject all mutation verbs (`POST`/`PUT`/`PATCH`/`DELETE` → `405`). Support Mattermost public/private channels, `@username` mentions, and public channel creation; support Jira deep context traversal (Epics, subtasks, `issuelinks`, `/remotelink`, JQL search, and plain-text/log attachment reading via `jira_read_attachment_text`). | **G4 / G5** |
-| **D8** | **Owned workflow domain on DSH** | Keep DSH as the agent runtime and keep the prototype's integration layer. Replace the prototype work model (Eval/Assessor, Ticket/Assignment/Executor, LLM main Session, Passes) and the V1 `WorkflowCoordinator` with an owned workflow domain: durable inbox, deterministic router, policy roles, and a single-writer engine whose state, events and effects commit in one transaction. See [D8 detail](#d8-owned-workflow-domain-on-dsh). | **G7–G10** |
-| **D9** | **Settings are deployment configuration** | Operator settings (models, sender allowlists, policy, worker limits, team prompts) live in the deployment's versioned configuration and change by a reviewed change and a redeploy. The profile sets the default model; a workflow stage may override it; each job's run manifest freezes the resolved model per stage. The dashboard shows the effective values read-only and never writes. | `G9` |
-| **D10** | **Repository profiles and toolchains** | A deployment lists its repositories, each with its target branch, test and setup commands and registry presets; the router picks a job's repository deterministically and the run manifest freezes the profile. Each repository brings its own toolchain versions (`mise.toml` / `.tool-versions`). A host-run setup step installs them with `mise` into a shared, read-only cache before the first stage; repository files never run during that install, and agents never get the toolchain download hosts. No per-job containers. | `G11` |
-| **D11** | **Test services as sandboxed processes** | Every job can use Postgres, RabbitMQ and Kafka at their usual local ports, with no configuration per repository. Each runs inside the sandbox of the command that connects to it, started on first connection from binaries in the image, fresh for every command, and gone when the command ends; nothing outside that sandbox can reach it. No Docker daemon and no shared server. See [D11 detail](#d11-test-services-as-sandboxed-processes). | `G12` |
-| **D12** | **Each conversation in its place** | Clarifying requirements happens in a Mattermost thread, with whoever the ticket's author brings in; the plan, its revisions, its approval and questions about it happen in the Jira ticket; technical discussion happens on the merge request. A question to the workbench is answered where it was asked, without moving the job. Everything the workbench writes is Russian, short and structured. Revises where `D8`'s gates live. See [D12 detail](#d12-each-conversation-in-its-place). | `G14` |
-| **D13** | **A standalone supervision dashboard** | The workbench serves its own read-only dashboard and API on its own port, apart from DSH's web app: a URL per job, the agent's trace read from its DSH session, no built-in sign-in (allowlisted `Host` names; an SSO proxy in front where it is reachable from elsewhere), and DSH's own UI opt-in. Revises how `D7` hosts the dashboard. See [D13 detail](#d13-a-standalone-supervision-dashboard). | `G15` |
-| **D14** | **Open-source release as Workflow Agent** | Release the project as **Workflow Agent** (`workflow-agent`) under **Apache-2.0**, keeping the adapted MIT code's notices; **English by default**, Russian kept, chosen per deployment and frozen per job; a fresh public history on GitHub; no upgrade from pre-release state. | Docs and tests |
+How to read it:
+- **It is a historical record.** Each decision is kept as it was made, with its date. Where a later decision revises an earlier one, the earlier text stands and the later one says what it changes; DESIGN has the current state.
+- **`D1`–`D7`** were made for the first, pre-release build (called V1 below). `D8` replaced that build's work model, so some names in `D3` and `D4` no longer exist in the code.
+- **"The workbench"** is Workflow Agent's host process. **"The maintainer's trial"** is a hands-on run of the pre-release build on a test repository, which several later amendments answer.
+- **Russian examples** in `D12` date from when Russian was the only language; `D14` made English the default.
+
+| ID | Area | Decision |
+| --- | --- | --- |
+| **D1** | **Upstream version lock** (revised 2026-11-11) | Pin runtime to **`@deepseek-ai/dsh@0.2.2-rc.1`** (`@deepseek-ai/cordis@4.1.0`, `@deepseek-ai/schemastery@3.19.0`, Node.js `>=24.9.0`) with exact pins in `devDependencies`, `peerDependencies` and `engines.dsh`, paired with **`dsh-superagent-prototype` `8c32a9dc5`**, booting via the official `npx dsh --profile workflow-agent` CLI and [`cordis.patch.yml`](../cordis.patch.yml). |
+| **D2** | **Per-job worker isolation & OS sandboxes** (extended by `D8`: network egress) | Enforce stage OS sandboxes via `@deepseek-ai/dsh-sandbox-local` + `@deepseek-ai/dsh-permission-presets`: pin `inspect` and `plan` to **`workflow-agent-readonly`** (`sandbox: read-only`, `approval: never`) and `implement` and `review` to **`workflow-agent-worker`** (`sandbox: workspace-write`, `approval: never`), with separate `state` and `work` volumes, environment credential scrubbing (`WORKER_FORBIDDEN_ENV_PATTERN`), `/proc/<pid>/environ` kernel denial across `bwrap` user namespaces, and host-brokered connector/Git writes ([DESIGN §5](DESIGN.md#5-stage-presets-and-sandboxes)). |
+| **D3** | **Deterministic workflow engine, 4 stage presets & backtracking** (revised by `D8`) | Replace upstream's permanent LLM `orchestrator` middleman session with a **deterministic TypeScript coordinator** (`src/core/workflow.ts` in V1, since replaced by `D8`). Spawn **one persistent DSH `Session` per stage** (`job-<jobId>-stage-<stageId>`) sharing **one Git worktree per `Job`**. Configure 4 declarative stage presets in [`cordis.patch.yml`](../cordis.patch.yml) (`workflow-agent-inspector`, `planner`, `implementer`, `reviewer`) backed by granular connector tool plugins (`lib/tool-{jira,mattermost,gitlab}.js`). Support re-entrant cross-stage backtracking (`plan → inspect`, `implement → plan \| inspect`, `review → plan \| inspect`), `workbench_stage_report`, `workbench_trigger_handback`, direct `steer` delivery, and unreported-turn auto-recovery ([DESIGN §3](DESIGN.md#3-domain-srcdomain)). |
+| **D4** | **Hash-bound approvals & RU/EN reply classification** (revised by `D8`) | Verify `trigger.actor` (`{ source, id }`) deterministically against the gate's per-source `approvers` allowlist and bind approvals to the exact `artifact_revision` (`sha256` digest) for `stage.artifactKind`. Standalone short Russian/English approvals approve on a zero-LLM fast path; multi-clause replies (`"Ок, но..."`) run a stateless single-turn classifier (`changes_requested` → re-enter `plan` for revision `r + 1`, invalidating revision `r`). |
+| **D5** | **Outbound-polling connectors** | Implement `jira`, `mattermost`, and `gitlab` connectors using **outbound cursor-based HTTP polling** (`KV`, plus optional outbound Mattermost WebSocket) so zero inbound webhook ports are required behind NAT or on local Docker Compose. Separate deterministic contract tests from recorded live smoke tests. |
+| **D6** | **Russian (`ru`) & English (`en`) text handling** | Replace upstream's 100-word Chinese segmenter limit (`Intl.Segmenter('zh')`) with connector-appropriate character limits (`8,000`–`16,000` chars), replace `{ zh, en }` wrappers with `ru`/`en` localization and `\p{Script=Cyrillic}` support, and transliterate Cyrillic issue titles into ASCII-only Git branch/worktree slugs (`agent/<issue-key>-<ascii-slug>`). |
+| **D7** | **Loopback read-only supervision & deep connector context** | Bind the supervision HTTP server to `127.0.0.1` and reject all mutation verbs (`POST`/`PUT`/`PATCH`/`DELETE` → `405`). Support Mattermost public/private channels, `@username` mentions, and public channel creation; support Jira deep context traversal (Epics, subtasks, `issuelinks`, `/remotelink`, JQL search, and plain-text/log attachment reading via `jira_read_attachment_text`). |
+| **D8** | **Owned workflow domain on DSH** | Keep DSH as the agent runtime and keep the prototype's integration layer. Replace the prototype work model (Eval/Assessor, Ticket/Assignment/Executor, LLM main Session, Passes) and the V1 `WorkflowCoordinator` with an owned workflow domain: durable inbox, deterministic router, policy roles, and a single-writer engine whose state, events and effects commit in one transaction. See [D8 detail](#d8-owned-workflow-domain-on-dsh). |
+| **D9** | **Settings are deployment configuration** | Operator settings (models, sender allowlists, policy, worker limits, team prompts) live in the deployment's versioned configuration and change by a reviewed change and a redeploy. The profile sets the default model; a workflow stage may override it; each job's run manifest freezes the resolved model per stage. The dashboard shows the effective values read-only and never writes. |
+| **D10** | **Repository profiles and toolchains** | A deployment lists its repositories, each with its target branch, test and setup commands and registry presets; the router picks a job's repository deterministically and the run manifest freezes the profile. Each repository brings its own toolchain versions (`mise.toml` / `.tool-versions`). A host-run setup step installs them with `mise` into a shared, read-only cache before the first stage; repository files never run during that install, and agents never get the toolchain download hosts. No per-job containers. |
+| **D11** | **Test services as sandboxed processes** | Every job can use Postgres, RabbitMQ and Kafka at their usual local ports, with no configuration per repository. Each runs inside the sandbox of the command that connects to it, started on first connection from binaries in the image, fresh for every command, and gone when the command ends; nothing outside that sandbox can reach it. No Docker daemon and no shared server. See [D11 detail](#d11-test-services-as-sandboxed-processes). |
+| **D12** | **Each conversation in its place** | Clarifying requirements happens in a Mattermost thread, with whoever the ticket's author brings in; the plan, its revisions, its approval and questions about it happen in the Jira ticket; technical discussion happens on the merge request. A question to the workbench is answered where it was asked, without moving the job. Everything the workbench writes is Russian, short and structured (the language rule is revised by `D14`). Revises where `D8`'s gates live. See [D12 detail](#d12-each-conversation-in-its-place). |
+| **D13** | **A standalone supervision dashboard** | The workbench serves its own read-only dashboard and API on its own port, apart from DSH's web app: a URL per job, the agent's trace read from its DSH session, no built-in sign-in (allowlisted `Host` names; an SSO proxy in front where it is reachable from elsewhere), and DSH's own UI opt-in. Revises how `D7` hosts the dashboard. See [D13 detail](#d13-a-standalone-supervision-dashboard). |
+| **D14** | **Open-source release as Workflow Agent** | Release the project as **Workflow Agent** (`workflow-agent`) under **Apache-2.0**, keeping the adapted MIT code's notices; **English by default**, Russian kept, chosen per deployment and frozen per job; a fresh public history on GitHub; no upgrade from pre-release state. |
 
 ## D8: Owned workflow domain on DSH
 
-**Status:** Accepted 2026-11-10. Implemented through `P9` (`G9` met); the test-integrity and review checks, network egress and credential masking were built in `P10` (`G10` met). Revises `D3` and `D4`; extends `D2`.
+**Status:** Accepted 2026-11-10; implemented. Revises `D3` and `D4`; extends `D2`.
 
 ### Context
 
@@ -37,7 +43,7 @@ DSH has no durable multi-stage workflow engine, no budgets and no network isolat
 
 ### Decision
 
-1. **Keep** DSH (agent loop, sessions, presets, sandboxes) and the prototype integration layer (source kinds, channels, context readers, git transport). The prototype's SQLite store and effects/outbox are kept as patterns and rebuilt in the kernel (`P7`), because decision 2 needs state, events and effects in one transaction. Sources write only to the inbox and never touch job state. (Wording clarified 2026-11-11; the decision is unchanged.)
+1. **Keep** DSH (agent loop, sessions, presets, sandboxes) and the prototype integration layer (source kinds, channels, context readers, git transport). The prototype's SQLite store and effects/outbox are kept as patterns and rebuilt in the kernel, because decision 2 needs state, events and effects in one transaction. Sources write only to the inbox and never touch job state.
 2. **One change path.** Every input (source event, gate reply, effect result, timer, agent tool call) becomes a command from a durable row. A per-job single-writer engine runs a pure `decide`/`evolve` core and commits the new state row, appended job events and emitted effects in one SQLite transaction (`BEGIN IMMEDIATE` plus a version check). The state row is the source of truth; the event log is for audit and projections.
 3. **Intake.** A job starts only on an explicit trigger from an eligible actor, mapped to a known workflow by a deterministic policy check in the router. An immutable `IntakeDecision` records actor, policy version, definition and basis. No LLM routes.
 4. **Versioned definitions and a frozen run manifest.** Each job pins its definition hash, prompt hashes, presets, model, sandbox and egress profiles, and policy version. Resume and backtrack use the manifest, never "latest". Jobs whose definition is not registered are parked.
@@ -73,11 +79,11 @@ DSH has no durable multi-stage workflow engine, no budgets and no network isolat
 
 - **Positive:** one change path; restart recovery is mechanical; intake is auditable; definitions can change safely; verification is done by the host; the core is smaller.
 - **Negative:** a substantial rebuild of the domain layer and its tests; we own and must rigorously test an engine kernel (model-based property tests, crash simulation); old definition versions must stay loadable; approval quality depends on a model, so a labelled RU/EN reply corpus with a zero-false-approval bar gates releases.
-- **Migration:** V1 has no users, so there is no stopgap patch and no V1 data migration, and v2 starts with a fresh schema. The order is: upgrade DSH to `0.2.2-rc.1` with exact pins and Node 24.9 (a separate decision that updates `D1`), then the kernel, then the domain, then verification and safety, then cut-over. Legacy Engine/Eval/Ticket/Executor/Passes and the V1 coordinator are deleted at cut-over. PRD and DESIGN are updated as each phase lands.
+- **Migration:** V1 has no users, so there is no stopgap patch and no V1 data migration, and v2 starts with a fresh schema. The order is: upgrade DSH to `0.2.2-rc.1` with exact pins and Node 24.9 (a separate decision that updates `D1`), then the kernel, then the domain, then verification and safety, then cut-over. Legacy Engine/Eval/Ticket/Executor/Passes and the V1 coordinator are deleted at cut-over.
 
 ### Amendment: review severity, evidence and merge risk (2026-11-14)
 
-**Status:** Accepted 2026-11-14 by the maintainer; planned as `P16`. Amends decision 5 (the clean-context review) and builds on `D12` after-trial items 3 and 5. It adapts ideas from two MIT-licensed skills, `review-pr` and `merge-risk` (`warpdotdev/common-skills`; `merge-risk` credits Matt Pocock's `skills`); provenance in [UPSTREAM](UPSTREAM.md) once implemented.
+**Status:** Accepted 2026-11-14 by the maintainer; implemented. Amends decision 5 (the clean-context review) and builds on `D12` after-trial items 3 and 5. It adapts ideas from two MIT-licensed skills, `review-pr` and `merge-risk` (`warpdotdev/common-skills`; `merge-risk` credits Matt Pocock's `skills`); provenance in [UPSTREAM](UPSTREAM.md#4-adapted-ideas).
 
 1. The clean-context review stays one model call with no tools that reads the approved plan, the follow-ups and the diff, and nothing else. It does not read the merge request description or the stage report.
 2. Each finding has a severity: `critical` and `important` can fail the check; `suggestion` and `nit` are notes. Robustness (timeouts, retries, lifecycle) is a suggestion unless it risks correctness, security or data loss.
@@ -86,23 +92,23 @@ DSH has no durable multi-stage workflow engine, no budgets and no network isolat
 5. The same call returns a merge-risk summary (alignment, impact, verification, rollback cost, error detection). The host computes low/medium/high, with floors for sensitive areas and the worst impact or rollback. It never gates. It is posted by the host: one line in the completion post, a note on the merge request (only when there is one), and on the dashboard, with any demoted serious findings.
 6. The implement and review stages audit their own diff before reporting and write the MR description in a fixed shape (`standard-delivery@9`).
 
-**Out of scope:** GitHub review JSON, suggestion blocks, the validator script, screenshot/profiling requirements, a second-opinion review call (beyond the one re-ask for missing evidence), gating on risk, the host editing the MR description, inline MR diff comments, validating the MR description's headings, repository conventions for the *reviewer* (follow-up, §7).
+**Out of scope:** GitHub review JSON, suggestion blocks, the validator script, screenshot/profiling requirements, a second-opinion review call (beyond the one re-ask for missing evidence), gating on risk, the host editing the MR description, inline MR diff comments, validating the MR description's headings, repository conventions for the *reviewer* (a follow-up).
 
 ## D9: Settings are deployment configuration
 
-**Status:** Accepted 2026-11-11. Implemented in `P9` (`G9` met). Extends `D7` and `D8` (decision 4).
+**Status:** Accepted 2026-11-11; implemented. Extends `D7` and `D8` (decision 4).
 
 ### Context
 
-V1 kept operator settings in the SQLite store and edited them on dashboard forms: policy rules and admission, the eval mode, the worker and orchestrator models, the worker count, the prepare command, Source settings and the team's prompts. `D7` makes the dashboard read-only, so those forms saved through a stub that wrote nothing and reported "Saved". The only writes were Source syncs and the `WORKBENCH_ALLOWED_SENDERS` seeding. As a result no deployment could choose a model (found in `P6`).
+V1 kept operator settings in the SQLite store and edited them on dashboard forms: policy rules and admission, the eval mode, the worker and orchestrator models, the worker count, the prepare command, Source settings and the team's prompts. `D7` makes the dashboard read-only, so those forms saved through a stub that wrote nothing and reported "Saved". The only writes were Source syncs and the `WORKBENCH_ALLOWED_SENDERS` seeding. As a result no deployment could choose a model.
 
 ### Decision
 
 1. **Configuration owns settings.** Operator settings live in the deployment's configuration: the profile patch for structure and values, and environment variables or the DSH credential store for hosts and secrets. The configuration is versioned in git next to the workflow definitions and changes by a reviewed change and a redeploy.
-2. **Models.** The profile sets the default model for agent stages and the model for approval verdicts. A workflow stage may name its own model and reasoning effort. The run manifest (`D8`, decision 4) freezes the resolved model of every stage, so a configuration change never moves a running job. Stages start on the one default; a stage gets its own model only when the end-to-end eval (`P13`) shows a better cost per accepted MR or better review findings. V1's two roles (`worker` for every stage, `orchestrator` for the LLM main session) do not carry over: `D8` removes the main session, so the V2 model uses are the four stages and the approval verdict, plus, from `P10`, the clean-context review check (`D8`, decision 5).
+2. **Models.** The profile sets the default model for agent stages and the model for approval verdicts. A workflow stage may name its own model and reasoning effort. The run manifest (`D8`, decision 4) freezes the resolved model of every stage, so a configuration change never moves a running job. Stages start on the one default; a stage gets its own model only when the end-to-end eval shows a better cost per accepted MR or better review findings. V1's two roles (`worker` for every stage, `orchestrator` for the LLM main session) do not carry over: `D8` removes the main session, so the V2 model uses are the four stages, the approval verdict and the clean-context review check (`D8`, decision 5).
 3. **The dashboard reads, never writes** (`D7`). It shows the effective value of each setting and where it comes from.
 4. **Secrets never go in the profile.**
-5. **Interim (V1, 2026-11-11, ended in `P9`).** The V1 settings and prompts pages were shown read-only, with no save, until `P9` replaced them.
+5. **Interim.** The V1 settings and prompts pages were shown read-only, with no save, until the read-only dashboard replaced them.
 
 ### Alternatives rejected
 
@@ -116,20 +122,20 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 
 ## D10: Repository profiles and toolchains
 
-**Status:** Accepted 2026-11-12. Implemented in `P11` (`G11` met). Extends `D2`, `D8` (decisions 3, 4 and 10) and `D9`.
+**Status:** Accepted 2026-11-12; implemented. Extends `D2`, `D8` (decisions 3, 4 and 10) and `D9`.
 
 ### Context
 
-- **One repository per deployment.** `standard-delivery@2` takes one `repository`, one `targetBranch` and one `testCommand` from the deployment. A workplace has many repositories, often in different languages.
-- **One language in the image.** The image is `node:24.22.2-bookworm-slim`: it has Node and npm and no Python, Go, Java or Rust (checked 2026-11-12). A Python repository cannot run its tests at all.
-- **The network closes in `P10`.** Inspect and plan get no network; implement and review reach public package registries only (`D8`, decision 10). An agent cannot download a toolchain, and should not: toolchains come from hosts such as GitHub release assets, which would widen the paths out of the sandbox.
+- **One repository per deployment.** `standard-delivery` took one `repository`, one `targetBranch` and one `testCommand` from the deployment. A workplace has many repositories, often in different languages.
+- **One language in the image.** The image is `node:24.22.2-bookworm-slim`: it has Node and npm and no Python, Go, Java or Rust. A Python repository cannot run its tests at all.
+- **The network is closed** (`D8`, decision 10). Inspect and plan get no network; implement and review reach public package registries only. An agent cannot download a toolchain, and should not: toolchains come from hosts such as GitHub release assets, which would widen the paths out of the sandbox.
 
 ### Decision
 
 1. **Repository profiles.** The deployment configuration (`D9`) lists repositories. Each profile has the GitLab project path, a short name, the target branch, the test command, an optional setup command, its registry presets, optional default toolchain versions, match rules, and whether the repository has CI (`ci: required | none`, default `required`).
    - **Choosing a repository is deterministic** (`D8`, decision 3): an explicit `repo:<name>` in the triggering message, else a Jira project key, else a Mattermost channel, else the deployment's default.
    - **No match and no default:** the workbench replies with the configured repository names, and no job starts.
-   - **Amended 2026-11-12 (the maintainer's decision, "per-repo senders"):**
+   - **Amended 2026-11-12** (the maintainer's decision):
      - **Per-repository senders.** A profile may list `senders`, per source, in the forms the global sender policy accepts. When present, only those senders may start a job on that repository, and they must still be allowed globally (both rules apply); when absent, the global senders apply.
      - **No contradicting override.** When the trigger's thread maps to a repository by its Jira project or Mattermost channel, a `repo:` naming another repository is refused. A `repo:` naming the same one, or used where nothing maps (a direct message, an unmapped channel), is allowed, subject to the senders rule.
      - **Refusals start no job** and get a reply saying why (not allowed on that repository, or it contradicts this thread's repository). The no-match reply lists only the repositories this sender may use.
@@ -145,7 +151,7 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 4. **The toolchain cache is shared and read-only to every sandbox and check.** Only the setup step writes it, one entry per tool and version, so one job cannot change another's toolchains. Global installs go to the job's own home instead, and no tool downloads a toolchain by itself (for example `GOTOOLCHAIN=local`).
 5. **Languages.** Node and Python are tested end to end, and Go by a smoke test, with the registry presets `npm`, `pypi` and `go`. Only allowed tools are installed, from backends that verify checksums.
    - **Other `mise` toolchains work untested** once a deployment adds their public registry hosts.
-   - **Private registries and internal hosts stay out of V2** (`D8`, decision 10).
+   - **Private registries and internal hosts stay out of scope** (`D8`, decision 10).
 6. **System libraries** that `mise` cannot provide (for example `libpq` or a browser) come from a deployment image built on ours. DEPLOYMENT documents how.
 7. **Agents may still install packages** in implement and review: they edit the manifest and run the package manager through the proxy.
 
@@ -171,15 +177,15 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 
 ## D11: Test services as sandboxed processes
 
-**Status:** Accepted 2026-11-12 by the maintainer, after a revision the same day at the maintainer's direction: no configuration per repository, the services a Python backend commonly needs (Postgres, RabbitMQ and Kafka), and the Postgres major taken from the repository, so two repositories on different majors each test against their own. Implemented in `P12` (`G12` met), before the end-to-end eval (`P13`). Extends `D2`, `D8` (decision 10) and `D10`.
+**Status:** Accepted 2026-11-12 by the maintainer, after a revision the same day at the maintainer's direction: no configuration per repository, the services a Python backend commonly needs (Postgres, RabbitMQ and Kafka), and the Postgres major taken from the repository, so two repositories on different majors each test against their own. Implemented. Extends `D2`, `D8` (decision 10) and `D10`.
 
 ### Context
 
 - **Backend tests need services.** A Python service's tests often expect Postgres, a message broker (RabbitMQ, for example under Celery or taskiq) or Kafka. CI provides them as `services:` (in GitLab CI, a container per service, reached by names such as `postgres`). Today a job has none, so such a suite fails in the agent's shell and in the host's `tests` check, whatever the agent does.
 - **One sandbox per command.** Every command, whether an agent's shell command, one of its background jobs or a host check, runs in its own `bwrap` sandbox: its own PID namespace (everything in it ends with the command), its own network namespace with only its own loopback (`--unshare-net`), and an empty `/tmp` (DESIGN §5). Two commands cannot reach each other, and nothing outside can reach either.
 - **No containers inside.** The workbench has no Docker daemon, and `D10` rejected giving it one: it is root-equivalent, and it would replace DSH's sandboxed execution.
-- **Probe (2026-11-12).** In a throwaway container of the `P11` image, non-root, inside a sandbox with the wrapper's exact `bwrap` arguments, Debian's Postgres 15 ran `initdb` in 0.44 s; starting a copy of an initialised data directory and answering a query took another 0.16 s. RabbitMQ and Kafka were measured in `T12.0` and `T12.7` (consequences).
-- **Binaries for both architectures** (checked 2026-11-12; the first host is an Apple Silicon Mac, arm64, and later Kubernetes on amd64):
+- **Probe.** In a throwaway container of the image, non-root, inside a sandbox with the wrapper's exact `bwrap` arguments, Debian's Postgres 15 ran `initdb` in 0.44 s; starting a copy of an initialised data directory and answering a query took another 0.16 s. RabbitMQ and Kafka were measured later (consequences).
+- **Binaries for both architectures** (as of 2026-11-12; the image targets arm64 and amd64):
   - **Postgres:** the PostgreSQL project's apt repository (PGDG) has every supported major for Debian bookworm on amd64 and arm64, about 60 MB each installed. Postgres 14 reaches its end of life on 2026-11-12, so the supported majors are 15–18.
   - **RabbitMQ:** RabbitMQ's own Erlang packages for bookworm are amd64 only, and RabbitMQ 4 needs a newer Erlang than Debian's. Debian bookworm has RabbitMQ 3.10.8 on both, with Debian's security fixes.
   - **Kafka:** Apache's release is Java bytecode, the same on both (current release 4.4.0); it needs Java 17 or later, and Debian bookworm has OpenJDK 17 on both. It runs in KRaft mode, without ZooKeeper.
@@ -194,7 +200,7 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
    - **No new boundary.** The service runs as the same user, in the same sandbox, with the same masks, as the command that uses it. It is reachable from nothing else, and it reaches nothing: the network is unchanged.
 3. **Where services exist:** agent shells in implement and review (and their background jobs), and the host's `check` profile. Not inspect or plan (no shell), and not `fetch`, `toolchain`, `verify` or `setup`.
 4. **How tests find them.** The defaults of each project's official container image, so most CI settings work unchanged:
-   - **Names:** `postgres`, `rabbitmq` and `kafka` resolve to the sandbox's loopback, as service names do in GitLab CI; so does the sandbox's own hostname (added in `T12.7`: Erlang and Java look it up, and an unknown name waited for DNS).
+   - **Names:** `postgres`, `rabbitmq` and `kafka` resolve to the sandbox's loopback, as service names do in GitLab CI; so does the sandbox's own hostname (Erlang and Java look it up, and an unknown name waits for DNS that never answers).
    - **Postgres:** user `postgres`, password `postgres`, database `postgres`, a superuser, so tests can create their own databases.
    - **RabbitMQ:** user `guest`, password `guest`, virtual host `/`.
    - **Kafka:** one broker, plaintext, no authentication, topics created on first use.
@@ -208,7 +214,7 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 6. **The repository says which Postgres major it uses,** as it pins its toolchains (`D10`, decision 2). The host's setup step reads the image tags its CI already names: the `services` of `.gitlab-ci.yml` (for example `postgres:15`) and the `image` of a Compose file's services (`docker-compose.yml`, `compose.yaml`). It reads them as data, at the job's start, from the target branch, so an agent's later edit does not change them; it takes only the leading major of a `postgres` tag and runs nothing.
    - **No tag, or a tag it cannot read** (`postgres:$PG_VERSION`, `latest`): the newest major, noted in the setup log.
    - **Two majors named:** the newest, noted.
-   - **A CI or Compose file the host cannot read or parse** (added after review): the setup step blocks and asks for the profile's `postgres`, rather than guess.
+   - **A CI or Compose file the host cannot read or parse:** the setup step blocks and asks for the profile's `postgres`, rather than guess.
    - **A major the image does not have:** the setup step blocks and says which, as it does for a toolchain it cannot install (`D10`, decision 3).
    - **An optional `postgres` field in the repository profile** overrides what is read, for a repository whose files mislead.
    - **RabbitMQ and Kafka have one version each.** A repository that names a different major gets a note in the setup log, and the job runs.
@@ -216,7 +222,7 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
    The chosen major is recorded in the job's sandbox file, and every sandbox of the job uses it.
 
    The servers run tuned for tests: no `fsync`, small buffers, and a capped Java heap for Kafka. A deployment that needs another version, an extension (for example PostGIS) or another service builds its image on ours, as DEPLOYMENT describes for system libraries.
-7. **A service that will not start** closes the connection and prints `workbench-services: <service> did not start` with its log tail. In a host check that is the environment, not the agent, so the check is `blocked` with the log, as `P10` blocks on the environment. The line comes through the command's own output, so an agent's code could print it too; that can only block the job for a person, never pass a check, and the evidence keeps the end of the log (review).
+7. **A service that will not start** closes the connection and prints `workbench-services: <service> did not start` with its log tail. In a host check that is the environment, not the agent, so the check is `blocked` with the log, as other checks block on the environment. The line comes through the command's own output, so an agent's code could print it too; that can only block the job for a person, never pass a check, and the evidence keeps the end of the log.
 
 ### Alternatives rejected
 
@@ -240,14 +246,14 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 - **Negative:**
   - the image grows by about 1 GB (1.45 GB to 2.44 GB, measured): four Postgres majors with the LLVM library their packages need, Java 17, Kafka and Erlang;
   - state does not survive between an agent's commands, so seeding data and running tests happen in one command, as in CI;
-  - each command that connects pays the start-up time once (measured in `T12.0` and `T12.7` on Apple Silicon, Docker Desktop, with the image's files cached): 0.2–0.6 s for Postgres, 4–5 s for RabbitMQ (with two Erlang schedulers and no busy-waiting; 7–22 s without) and 1–2 s for Kafka (a topic, a message and its read-back with three Java clients: 3–7 s);
+  - each command that connects pays the start-up time once (measured on Apple Silicon, Docker Desktop, with the image's files cached): 0.2–0.6 s for Postgres, 4–5 s for RabbitMQ (with two Erlang schedulers and no busy-waiting; 7–22 s without) and 1–2 s for Kafka (a topic, a message and its read-back with three Java clients: 3–7 s);
   - each running service holds memory for as long as its command runs: about 100 MB for Postgres, 140 MB for RabbitMQ and 360 MB for Kafka. Several commands using Kafka at once each run their own broker, so the host needs memory for them;
   - RabbitMQ and Kafka have one version each;
   - only these three. Others (Redis, MySQL, Elasticsearch or OpenSearch, MongoDB, S3-compatible storage) are follow-ups.
 
 ## D12: Each conversation in its place
 
-**Status:** Accepted 2026-11-13 by the maintainer, after answering its seven questions the same day ([below](#maintainers-answers-2026-11-13)), including the proposal on budget, resume and cancel gates. Planned as `P14`. It follows the maintainer's description of how a delivery team works with a ticket, written here in general terms. It revises `D8` (decisions on gates and threads) and `D4` (where an approval is admitted, and who may approve), and changes PRD `F5`, the approval rules and `A12` (below).
+**Status:** Accepted 2026-11-13 by the maintainer, after answering its seven questions the same day ([below](#maintainers-answers-2026-11-13)), including the proposal on budget, resume and cancel gates. Implemented. It follows the maintainer's description of how a delivery team works with a ticket, written here in general terms. It revises `D8` (decisions on gates and threads) and `D4` (where an approval is admitted, and who may approve), and changes PRD `F5`, the approval rules and `A12` (below).
 
 ### Context
 
@@ -259,7 +265,7 @@ V1 kept operator settings in the SQLite store and edited them on dashboard forms
 4. implements, and discusses the code on the merge request in GitLab. A business question found there goes back to Mattermost and to the plan in Jira, and the code is redone;
 5. finishes when the merge request passes.
 
-**What the workbench does today** (checked in the code, 2026-11-13):
+**What the workbench did before this decision:**
 
 - **One thread for everything.** Every gate (a question round, the plan's approval, a blocked job's resume) opens on the job's origin thread, the one the trigger was posted in (`openGate` uses `originThread`), and a reply counts only there. Started in Mattermost, the whole plan and its approval are in the chat; started in Jira, the questions go to Jira and Mattermost is not used.
 - **The plan is in two places, approved in the wrong one.** The plan stage's agent comments the plan in Jira, and the host posts the whole plan with the approval request on the origin thread. A Jira reply never approves.
@@ -295,7 +301,7 @@ The engine underneath fits: the single-writer kernel, effects, thread bindings (
 6. **The code is discussed on the merge request.**
    - **A question about the code** gets an answer turn in that discussion, while the job runs and after it completes.
    - **A requested code change** is taken by the `review` stage, as now; while implement is still running, it is kept for review rather than steered into implement.
-   - **A business question or a changed requirement** goes back to plan or inspect: clarified in Mattermost, revised and re-approved in Jira, then implemented on the same merge request (as `P13` already does for the review check's finding).
+   - **A business question or a changed requirement** goes back to plan or inspect: clarified in Mattermost, revised and re-approved in Jira, then implemented on the same merge request (as a review check's finding already does).
 7. **Russian, short and structured.** Everything the workbench and its agents write to people is Russian (the profile's `locale`, `ru`, applies to agent text through the stage instructions, and stage titles are localized). One style rule in every stage's instructions and in answer turns: lead with what is needed from the reader; numbered items; no preamble, no restating the ticket, no closing pleasantries. The plan is never posted in a chat; fixed messages are shortened to one or two lines.
 8. **People across tools, by email.** A Jira user and a Mattermost user are the same person when their email addresses match. The Mattermost connector already looks users up by email; Jira must show users' emails to the workbench's account (on Jira Server, the administrator's user email visibility setting). A ticket's author without a match is named in plain text, and the requester is asked instead.
 9. **Who may do what** (policy roles of `D8`, extended):
@@ -351,16 +357,16 @@ The seven questions this draft raised, with the maintainer's choice; decisions 3
 
 Not asked, proposed and accepted with the rest: budget, resume and cancel gates are posted in the job's Mattermost thread and decided by the repository's approvers (decision 9).
 
-Asked later the same day, before the maintainer's manual trial: **a job with no ticket?** It is refused. A workflow whose plan lives in the ticket starts only from a Jira comment or from a trigger that names an issue key (`@workbench сделай ORD-123`); any other trigger gets a short notice where it was posted (`no_ticket`), so a plan never lands outside Jira. When the repository maps Jira projects, only a key of one of them counts, and a job whose ticket cannot be linked at start fails with the reason. (`P14` had kept such a plan in the Mattermost thread as a default the maintainer could change.)
+Asked later the same day, before the maintainer's manual trial: **a job with no ticket?** It is refused. A workflow whose plan lives in the ticket starts only from a Jira comment or from a trigger that names an issue key (`@workbench сделай ORD-123`); any other trigger gets a short notice where it was posted (`no_ticket`), so a plan never lands outside Jira. When the repository maps Jira projects, only a key of one of them counts, and a job whose ticket cannot be linked at start fails with the reason. (The first implementation had kept such a plan in the Mattermost thread.)
 
 ### After the maintainer's trial (2026-11-14)
 
-The maintainer's trial on a test repository showed where people were left guessing. The maintainer decided the first three; the rest followed the recommendations put to the maintainer, who did not choose otherwise. `standard-delivery@8` carries them.
+The maintainer's trial on a test repository showed where people were left guessing. The maintainer decided the first three; the rest followed the recommendations put to the maintainer, who did not choose otherwise.
 
 1. **Someone who may not approve is told so** (maintainer). Their «ок» on the plan gets one line naming who approves («@dev-ivan, одобрить план может только @lead-1. Вопросы — пожалуйста.»); their questions are still answered and their talk gets nothing. An «ок» in the Mattermost thread for a plan waiting in Jira gets «План одобряется в задаче ORD-300 (@lead-1).»
 2. **Their change request goes to the approvers** (maintainer). It does not revise the plan and is not dropped: «@lead-1, @dev-ivan предлагает: … Изменить план?». The approver's answer decides: agreeing makes a revision, approving keeps the plan as it is.
 3. **The completion post says the implementation is ready for review** (maintainer), not that the task is done, with the checks named in words and that comments on the merge request reopen the job. The dashboard says «Готово к ревью» for such a job.
-4. **A merge request comment that changes the requirements goes to the plan first.** It is read with the approved plan; a change of behaviour, inputs, outputs, errors or interfaces reopens the job at `plan` (`reopen.requirements`) with a note on the merge request, and never reaches the code before a new approval. Plain thanks reopens nothing; anything else is still a follow-up. (In the trial a review attempt built `sku` and pushed it before going back to the plan.)
+4. **A merge request comment that changes the requirements goes to the plan first.** It is read with the approved plan; a change of behaviour, inputs, outputs, errors or interfaces reopens the job at `plan` (`reopen.requirements`) with a note on the merge request, and never reaches the code before a new approval. Plain thanks reopens nothing; anything else is still a follow-up. (In the trial a review attempt built the new behaviour and pushed it before going back to the plan.)
 5. **The clean-context review fails work only on a concrete defect.** A doubt is a note that passes. A second opinion before failing was considered and left out, since it would double the review's cost.
 6. **Answers on the merge request go into the comment's discussion.**
 
@@ -372,7 +378,7 @@ The maintainer's trial on a test repository showed where people were left guessi
 
 ### Closing a finished job (2026-11-15)
 
-The trial's `ORD-301` showed a gap: a finished job takes merge request feedback until a fact its version declares closes it, so a job on a version before `@11` (no `completeOn`), or one whose merge request is closed without a merge or left open, never closes, and any comment can reopen it on a branch that is gone. The maintainer chose, from the design put to them:
+The trial showed a gap: a finished job takes merge request feedback until a fact its version declares closes it, so a job whose version declares no `completeOn`, or one whose merge request is closed without a merge or left open, never closes, and any comment can reopen it on a branch that is gone. The maintainer chose, from the design put to them:
 1. **An approver closes it in the work tools**, with a standalone `закрой` (`закрыть`, `close`, …) on any of the job's threads, not with an operator command or a dashboard control: operational requests stay in the work tools (PRD decision 6) and the dashboard stays read-only. Anyone else is told who may. No slash form: `/close` is a GitLab quick action.
 2. **A merge request closed without a merge closes the job** (`mr_closed`, `standard-delivery@12`), as a merge does.
 3. **A comment on a closed job is answered once per thread**: the job is closed, and new work is a new task. Silence had left people guessing in the trial.
@@ -381,11 +387,11 @@ Closing is host logic, so jobs pinned to earlier versions get it with no migrati
 
 ## D13: A standalone supervision dashboard
 
-**Status:** Accepted 2026-11-13 by the maintainer, with the design and the approved mockup; implemented in `P15` (`G15` met). Revises how `D7` hosts the dashboard; the read-only rule stands.
+**Status:** Accepted 2026-11-13 by the maintainer, with the design and the approved mockup; implemented. Revises how `D7` hosts the dashboard; the read-only rule stands.
 
 ### Context
 
-The panel lived inside DSH's web app. An operator took a login token from the logs, opened DSH's home and chose "Agent Workbench" in its sidebar, next to DSH's own "New Session". `workbench-proxy` added the panel's request header to every request, so all of DSH's UI was published on `127.0.0.1:25400`. The panel had no URL per job, showed raw thread keys and user ids, none of the workbench's own posts, and nothing of what the agent thought or did.
+The panel lived inside DSH's web app. An operator took a login token from the logs, opened DSH's home and chose the workbench's panel in its sidebar, next to DSH's own "New Session". `workbench-proxy` added the panel's request header to every request, so all of DSH's UI was published on `127.0.0.1:25400`. The panel had no URL per job, showed raw thread keys and user ids, none of the workbench's own posts, and nothing of what the agent thought or did.
 
 ### Decision
 
@@ -410,7 +416,7 @@ The panel lived inside DSH's web app. An operator took a login token from the lo
 
 ## D14: Open-source release as Workflow Agent
 
-**Status:** Accepted 2026-11-15 by the maintainer, with its plan (`P17`).
+**Status:** Accepted 2026-11-15 by the maintainer; implemented.
 
 ### Context
 

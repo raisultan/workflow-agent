@@ -9,6 +9,7 @@ import { stageTitleIn, type PinnedWorkflow } from '../domain/definition.ts'
 import type { Actor, Policy } from '../domain/policy.ts'
 import type { RepositoryProfile } from '../domain/repositories.ts'
 import type { Workbench } from '../domain/workbench.ts'
+import { escapeRegExp } from '../infra/text.ts'
 import type { KindHealth } from '../kernel/effects.ts'
 import type { Health } from '../sources/host.ts'
 import { attemptSessionId } from '../adapters/stage-runner.ts'
@@ -175,8 +176,6 @@ export class RouteError extends Error {
   readonly status: number
   constructor(status: number, message: string) { super(message); this.status = status }
 }
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 
 /** Redacts one string: each whole secret, and the start of one that a cut ended. */
 function redactText(text: string, forms: readonly string[]): string {
@@ -376,7 +375,7 @@ export function jobDetail(host: Pick<PanelHost, 'workbench' | 'deciders' | 'tick
     outbound: effects.filter(effect => effect.kind === 'post').map(effect => {
       const payload = effect.payload as { threadKey: string; message: { kind: string } }
       const ok = (effect.result as { ok?: { postedAt?: number; threadKey?: string; text?: unknown } } | null)?.ok
-      // The text as posted when the post recorded it; else as the workbench would write it now (2026-11-15).
+      // The text as posted when the post recorded it; else as the workbench would write it now.
       const recorded = typeof ok?.text === 'string'
       return { id: effect.id, at: ok?.postedAt ?? effect.dueAt, threadKey: ok?.threadKey ?? payload.threadKey, status: effect.status,
         kind: payload.message.kind, text: recorded ? ok.text as string : host.renderPost(id, payload.threadKey, payload.message), recorded }

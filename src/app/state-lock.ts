@@ -19,7 +19,7 @@ export function lockStateDir(stateDir: string, onCompromised: (error: Error) => 
       return lockSync(stateDir, { stale: staleMs, onCompromised, lockfilePath: join(stateDir, '.lock') })
     } catch (error) {
       if ((error as { code?: string }).code !== 'ELOCKED' || Date.now() >= deadline) throw error
-      // Synchronous by necessity: the runtime opens its Store right after locking, in its constructor.
+      // Synchronous by necessity: the runtime opens its database right after locking, in its constructor.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250)
     }
   }

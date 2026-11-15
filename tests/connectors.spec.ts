@@ -4,9 +4,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { KV } from '../src/kv.ts'
-import { GitLabConnector, assertAllowedAgentBranch, gitlabKind, pollGitLabOnce, watchedMr } from '../src/sources/gitlab.ts'
-import { JiraConnector, buildJiraPollJql, isReadableTextAttachment, jiraKind, pollJiraOnce } from '../src/sources/jira.ts'
-import { MattermostConnector, mattermostKind, pollMattermostOnce } from '../src/sources/mattermost.ts'
+import { GitLabConnector, pollGitLabOnce } from '../src/sources/gitlab.ts'
+import { JiraConnector, buildJiraPollJql, isReadableTextAttachment, pollJiraOnce } from '../src/sources/jira.ts'
+import { MattermostConnector, pollMattermostOnce } from '../src/sources/mattermost.ts'
 
 describe('Phase 3 (G4) — Mattermost, Jira & GitLab Outbound-Polling Connectors', () => {
   describe('Mattermost Connector (D5, D7)', () => {

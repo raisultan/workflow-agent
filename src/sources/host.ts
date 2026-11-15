@@ -1,5 +1,5 @@
 /** What a Source plugin gets from the host (`T9.8`): its configuration, delivery to the inbox, its cursors, watched threads, health. */
-import type { Family, Key } from '../kv.ts'
+import type { Key } from '../kv.ts'
 import { fill } from '../infra/text.ts'
 import type { SourceRegistry } from './registry.ts'
 import type { ReceiveResult, Trigger, WatchedThread } from './types.ts'
@@ -7,7 +7,6 @@ import type { ReceiveResult, Trigger, WatchedThread } from './types.ts'
 /** Fixed English health templates (`{name}` placeholders). */
 export const HEALTH_TEXT = {
   sourceOff: 'Off',
-  pollFailures: '{count} consecutive failed polls; last: {error}',
 } as const
 export type HealthCode = keyof typeof HEALTH_TEXT
 export type Health = { state: 'starting' | 'ready' | 'paused' | 'error'; detail: string; at?: string; code?: HealthCode; values?: Record<string, string> }
@@ -31,7 +30,7 @@ export interface SourceContext {
   /** Appends an event to the inbox; a Source awaits it before moving its cursor, so a crash between the two re-reads rather than loses. */
   receive(trigger: Trigger): ReceiveResult | Promise<ReceiveResult>
   /** The Source's own records (its cursors); setting `undefined` removes one. */
-  state: { get<V>(key: Key<V>): V | undefined; set<V>(key: Key<V>, value: V | undefined): void; keys<V>(family: Family<V, never>): Key<V>[] }
+  state: { get<V>(key: Key<V>): V | undefined; set<V>(key: Key<V>, value: V | undefined): void }
   /** Threads jobs are bound to, which the Source watches (GitLab merge requests). */
   threads: { subscribed(source: string): WatchedThread[] }
   /** Reports one of this kind's declared health entries; throws for an undeclared one. */

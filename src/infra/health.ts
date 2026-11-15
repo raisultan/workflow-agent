@@ -1,4 +1,4 @@
-/** Component health registry displayed in the overview and source status panels. */
+/** The health board: each part of the runtime reports its own entry, and the dashboard shows them all. */
 import type { Health } from '../sources/host.ts'
 
 export interface HealthEntry {
@@ -10,7 +10,7 @@ export interface HealthEntry {
 
 /**
  * Central registry of component health entries, enforcing single-writer ownership per entry name.
- * Claimed by Runtime, Effects, Sessions, DshExecutor, Settings, and SourceRegistry, and read by management HTTP routes.
+ * The runtime, the dashboard's server and each Source kind claim entries; the dashboard's API reads them.
  */
 export class HealthBoard {
   private readonly entries: Record<string, Health> = {}

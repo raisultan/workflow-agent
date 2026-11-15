@@ -62,7 +62,7 @@ export async function workDiff(options: { worktree: string; base: string; commit
   /** Runs the worktree's `upload-pack` in the job's sandbox: the command git starts, and the variables the sandbox wrapper reads. */
   uploadPack?: { command: string; env: Readonly<Record<string, string>> } }): Promise<WorkDiff> {
   const git = options.git ?? 'git'
-  const scratch = await mkdtemp(join(tmpdir(), 'awb-diff-'))
+  const scratch = await mkdtemp(join(tmpdir(), 'workflow-agent-diff-'))
   const env = { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: scratch, LANG: 'C.UTF-8', GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '',
     GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
   const exec = async (args: string[], extraEnv: Readonly<Record<string, string>> = {}): Promise<string> => {

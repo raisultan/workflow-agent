@@ -2,8 +2,8 @@
  * `pnpm eval:review` (`P16`, `T16.8`): runs labelled review cases through the clean-context review check (`reviewChange`, the call
  * the `review` check makes) several times each, since its verdict is not stable on the same input, and prints per case how often
  * it reached the expected verdict, which labelled issues it found, which forbidden claims it made as blocking findings, and its
- * tokens. Cases: the synthetic set (`tests/fixtures/reviews.ts`), and with `--cases <file.json>` a set in the same shape (the
- * owner's trial replays, kept out of the repository).
+ * tokens. Cases: the synthetic set (`tests/fixtures/reviews.ts`), and with `--cases <file.json>` a set in the same shape (your own
+ * cases, kept out of the repository).
  *
  * It exits 1 when a case labelled `pass` fails in any run (a false failure), or a forbidden claim blocks.
  *

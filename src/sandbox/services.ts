@@ -22,7 +22,6 @@ import { join } from 'node:path'
 export const SERVICES_PREFIX = 'workbench-services: '
 /** The Postgres majors the image has (`D11`, decision 5), newest last; the newest is used when a repository names none. */
 export const POSTGRES_MAJORS = ['15', '16', '17', '18'] as const
-export type PostgresMajor = typeof POSTGRES_MAJORS[number]
 /** The names that resolve to the sandbox's loopback, as service names do in GitLab CI (`D11`, decision 4). */
 export const SERVICE_HOSTS = ['postgres', 'rabbitmq', 'kafka'] as const
 
@@ -204,7 +203,7 @@ interface Running { readonly child: ChildProcess; readonly log: string; readonly
 
 function startProcess(start: Start, log: string, cwd: string): Running {
   const out = openSync(log, 'a')
-  // In the service's own directory: a crash dump (`erl_crash.dump`, `hs_err_pid*.log`) never lands in the worktree (review).
+  // In the service's own directory: a crash dump (`erl_crash.dump`, `hs_err_pid*.log`) never lands in the worktree.
   const child = spawn(start.command, [...start.args], { cwd, env: { ...start.env }, stdio: ['ignore', out, out], detached: false })
   closeSync(out)
   const exited = new Promise<string>(resolve => {

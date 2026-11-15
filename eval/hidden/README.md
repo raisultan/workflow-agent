@@ -1,4 +1,4 @@
-# Hidden acceptance tests (`T13.1`)
+# Hidden acceptance tests
 
 The eval's acceptance tests, one directory per scenario (`eval/scenarios.ts`). They are never in a repository the mock GitLab
 serves, so no agent can read them. After a job ends, `eval/e2e.ts` copies them into a clone of its merge request's branch and

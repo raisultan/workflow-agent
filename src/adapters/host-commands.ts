@@ -36,7 +36,7 @@ export async function runConfined(ctx: Context, command: { argv: readonly string
 }
 
 /**
- * The `upload-pack` a host fetch from the job's worktree should run (final review): DSH's confined `git-upload-pack` under the host
+ * The `upload-pack` a host fetch from the job's worktree should run: DSH's confined `git-upload-pack` under the host
  * profile `fetch` (the worktree read-only, every other repository, the state and `$DSH_HOME` masked, no network), as the command
  * line git starts (git appends the repository path) and the variables the wrapper reads. `undefined` when there is no sandbox
  * (tests); a deployment on Linux always has one (`assertSandboxWrapper`).

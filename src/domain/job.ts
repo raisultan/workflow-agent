@@ -19,7 +19,7 @@ export const IntakeDecisionSchema = z.object({
   postedAt: z.number().int(),
   /** The repository chosen for the job (`T11.1`), and by which rule; absent in a deployment with no repositories. */
   repository: z.object({ name: z.string().min(1), basis: z.enum(['explicit', 'jira', 'mattermost', 'default']),
-    /** Which sender rule let the requester start it: the repository's own `senders`, or the global ones (`D10`, 2026-11-12). */
+    /** Which sender rule let the requester start it: the repository's own `senders`, or the global ones (`D10`). */
     allowedBy: z.enum(['repository', 'global']).optional() }).strict().optional(),
 }).strict()
 export type IntakeDecision = z.output<typeof IntakeDecisionSchema>
@@ -31,7 +31,7 @@ export const MessageSchema = z.object({
   threadKey: z.string().min(1),
   text: z.string(),
   postedAt: z.number().int(),
-  /** Where a reply goes within the thread: a merge request note's discussion (trial 2026-11-14). */
+  /** Where a reply goes within the thread: a merge request note's discussion. */
   replyTo: z.string().min(1).optional(),
 }).strict()
 export type Message = z.output<typeof MessageSchema>
@@ -210,7 +210,7 @@ export interface Gate {
   readonly redirects?: readonly { readonly item: number; readonly to: string }[]
 }
 
-/** The job's status (design §5): each variant carries only its own data. `new` exists only inside the first decision. */
+/** The job's status: each variant carries only its own data. `new` exists only inside the first decision. */
 export type JobStatus =
   | { kind: 'new' }
   /** The host's setup step runs before the first stage (`T11.4`): the job's toolchains, then its repository's setup command. */
@@ -322,7 +322,7 @@ export const SetupResultSchema = z.discriminatedUnion('outcome', [
 /** Job events; `v` is the event's schema version. */
 export type JobEvent =
   | { v: 1; type: 'JobStarted'; intake: IntakeDecision; workflowId: string; at: number }
-  /** `afterInterruption`: this run follows one a restart interrupted; another interruption blocks the job (review). */
+  /** `afterInterruption`: this run follows one a restart interrupted; another interruption blocks the job. */
   | { v: 1; type: 'SetupStarted'; n: number; at: number; afterInterruption?: boolean }
   | { v: 1; type: 'SetupCompleted'; n: number; toolchains: readonly Toolchain[]; ignored: readonly string[]; services?: JobServices; evidence: string }
   | { v: 1; type: 'ThreadBound'; threadKey: string; role: 'origin' | 'artifact' }
@@ -470,7 +470,7 @@ export type Notice =
   | { kind: 'no_ticket'; projects?: readonly string[] }
 export interface NoticePayload { readonly eventId: string; readonly threadKey: string; readonly notice: Notice }
 
-/** Effect kinds and payloads the decider emits; adapters (`P9`) perform them. */
+/** Effect kinds and payloads the decider emits; adapters perform them. */
 export const EFFECT = {
   attempt: 'stage.attempt',
   steer: 'stage.steer',

@@ -4,19 +4,15 @@
 export const IM_MAX_CHARS = 12_000
 export const JIRA_MAX_CHARS = 16_000
 export const GITLAB_MAX_CHARS = 16_000
+/** The limit of a source's messages; Mattermost's for any other (chat-like) source. */
+export const maxCharsFor = (source: string): number => source === 'jira' ? JIRA_MAX_CHARS : source === 'gitlab' ? GITLAB_MAX_CHARS : IM_MAX_CHARS
 
 /**
  * Validates that an outbound connector message (Mattermost, Jira, GitLab) is non-empty and within the connector's character limit (`D6`).
  * Allows multi-thousand-character Russian and English technical plans, requirement clarifications, and stage summaries.
  */
 export function checkedConnectorText(text: string, sourceOrMaxChars: string | number = 'mattermost', label?: string): string {
-  const maxChars = typeof sourceOrMaxChars === 'number'
-    ? sourceOrMaxChars
-    : sourceOrMaxChars === 'jira'
-      ? JIRA_MAX_CHARS
-      : sourceOrMaxChars === 'gitlab'
-        ? GITLAB_MAX_CHARS
-        : IM_MAX_CHARS
+  const maxChars = typeof sourceOrMaxChars === 'number' ? sourceOrMaxChars : maxCharsFor(sourceOrMaxChars)
   const name = label ?? (typeof sourceOrMaxChars === 'string' ? `${sourceOrMaxChars} message` : 'connector message')
   if (text.length > maxChars) {
     throw new Error(`Outbound ${name} has ${text.length} characters; maximum is ${maxChars}.`)
@@ -77,5 +73,7 @@ export function asciiSlug(text: string, maxWords = 4, maxLength = 32): string {
   return slug || 'task'
 }
 
+/** `template` with each `{name}` replaced by its value; a name with no value becomes empty. */
 export const fill = (template: string, values: Record<string, string>): string => template.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? '')
+/** `text` as a literal in a regular expression. */
 export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

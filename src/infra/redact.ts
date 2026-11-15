@@ -1,5 +1,5 @@
 /**
- * Hiding credentials in text the workbench quotes from logs it did not write (`T10.5`, final review): a check's command output and
+ * Hiding credentials in text the workbench quotes from logs it did not write (`T10.5`): a check's command output and
  * a failed CI job's log. CI masks its own variables; this catches what a script printed itself.
  *
  * - assignments whose name looks like a credential (`NAME_TOKEN=…`, `api_key: …`, `password = "…"`);

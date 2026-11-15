@@ -9,7 +9,8 @@ RUN apt-get update \
   && npm install -g pnpm@11.7.0
 
 # mise installs each repository's toolchains in the host's setup step (T11.2, D10). Exact release; the archive's SHA-256 is checked
-# per architecture before it is unpacked (the release's SHASUMS256.txt and its minisign signature were checked in T11.0).
+# per architecture before it is unpacked (the sums are from the release's SHASUMS256.txt, whose minisign signature was verified
+# when the version was pinned).
 ARG TARGETARCH
 ARG MISE_VERSION=2026.10.25
 ARG MISE_SHA256_AMD64=199966edaad1b208eb4c72955f1722dafb8fa799f575db720dea05aaa8216546
@@ -50,7 +51,7 @@ COPY src ./src
 RUN pnpm build
 
 # Runtime stage: the same base image, so the built addons match. It has a C/C++ toolchain and the headers most backend
-# dependencies build against (P11 review), so a job's `pip install` or `npm install` can compile a package with no wheel or
+# dependencies build against, so a job's `pip install` or `npm install` can compile a package with no wheel or
 # prebuilt binary for the platform (psycopg2, mysqlclient, bcrypt, node-gyp modules). Like the other packages here they come from
 # the base image's pinned Debian release (bookworm) and its security updates, not by exact package version: the archive drops
 # superseded versions, so exact pins would break the build within weeks.
