@@ -62,6 +62,9 @@ For more than one repository, or any other setting, copy the profile and edit it
 cp examples/profile.cordis.patch.yml config/profile.cordis.patch.yml
 ```
 
+The built-in workflow (`standard-delivery`) is ready to use as it is. To change how it works (its prompts, budgets or checks), or
+to add a process of your own, see [writing your own workflow](workflows.md#adapting-the-built-in-workflow).
+
 ## 4. Start
 
 ```bash

@@ -34,6 +34,40 @@ export function workflows(): WorkflowSpec[] { return [/* … */] }
 export function parameters(workflowId: string) { return workflowId === 'docs-update' ? { /* name: value */ } : undefined }
 ```
 
+## Adapting the built-in workflow
+
+You do not have to start from scratch. `standard-delivery` is included and turned on by the example profile; most teams only set
+their repository, Jira statuses and approvers ([getting started](getting-started.md)). To change more of it (a stage's prompt, a
+budget, the trigger, the checks), write a module that takes the built-in workflow and changes what you need. Every image carries the
+source, so the module imports it by its path in the container:
+
+```ts
+import type { WorkflowSpec } from 'workflow-agent'
+import { standardDelivery } from '/workspace/src/workflows/standard-delivery.ts'
+
+export function workflows(): WorkflowSpec[] {
+  const base = standardDelivery()
+  return [{
+    ...base,
+    // Your own id and version: your changes never clash with the built-in workflow's versions.
+    id: 'team-delivery',
+    version: 1,
+    prompts: { ...base.prompts, plan: `${base.prompts.plan}\nList database migrations in a section of their own.` },
+    declaration: { ...base.declaration, title: 'Team delivery', budgets: { ...base.declaration.budgets, tokens: 20_000_000 } },
+  }]
+}
+
+// The built-in workflow gets its Jira statuses from `workflows.standardDelivery`; yours from here.
+export function parameters(workflowId: string) {
+  return workflowId === 'team-delivery' ? { 'jira.inProgress': 'In Progress', 'jira.inReview': 'Code Review' } : undefined
+}
+```
+
+Then leave `workflows.standardDelivery` out of your profile and name your module in `workflows.modules`: both workflows take every
+mention, and intake would try `standard-delivery` first. A prompt you change in one language keeps the other's as it was: change
+`plan.ru` too if your deployment is Russian. When you take a newer image, compare its `standard-delivery` with what your module
+changed, and raise your module's version when you take its changes.
+
 ## The parts of a workflow
 
 | Part | What it is |
